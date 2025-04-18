@@ -9,6 +9,7 @@
 
 ## 📦 Features
 
+- Fully scriptable & automatable via CLI
 - Full ONVIF PTZ support via raw SOAP HTTP requests
 - WS-Security with Digest Authentication
 - Continuous Move, Absolute/Relative Move
@@ -16,6 +17,7 @@
 - PTZ Status, Configuration Options
 - Detailed logging (console + system log)
 - Dry run & verbose/debug modes for development
+- Standalone – does **not** require `onvif-cli` or any ONVIF SDK
 
 ---
 
@@ -26,8 +28,9 @@
 - **Node.js** (>= 18.x)  
 - **npm**  
 - **Network access** to ONVIF-compatible camera  
-- **Linux with logger** command (for system log support)  
-
+- **Linux with logger** command (for system log support)
+- **minimist** installed in same directy as where the *onvif_ptz-controls.js* file is located (see section: Setup) 
+ 
 ### 🧰 Install on a Raspberry Pi (Raspbian/Debian)
 
 ```bash
@@ -200,6 +203,11 @@ This helps you detect:
 Links:
 - ONVIF Device Manager: https://sourceforge.net/projects/onvifdm/
 - Wireshark: https://www.wireshark.org/
+
+---
+
+## 🛡️ Security Note
+This tool uses ONVIF-compliant digest authentication with WS-Security headers (password hashed via SHA1 with nonce and timestamp). No plain password is transmitted.
 
 ---
 
