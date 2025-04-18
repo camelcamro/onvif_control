@@ -223,7 +223,8 @@ Links:
 ## 🧾 Notes
 
 - Most generic IP cameras use `Preset001` to `Preset256` and many also using `Preset01` to `Preset99`
-- Be aware, that Most generic IP cameras use `Preset001` to `Preset256` and many also using `Preset01` to `Preset99`
+- Be aware, that most generic IP cameras use pre-defined Prests and are used for special comands
+  (eg: "tracking stop", "tracking start", "cruise mode", reset all "Presets to default"). This can't be used for *setpreset* or *removepreset" 
 - If nothing moves, check credentials, token, and presets
 - Ensure your camera supports PTZ and ONVIF over HTTP
 
