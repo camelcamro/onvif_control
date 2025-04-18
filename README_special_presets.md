@@ -90,8 +90,13 @@ You can enhance the script to include flags like:
 
 - Preset names such as **Preset001–Preset256** are standard for many ONVIF-compatible devices.
 - If these don't work, you may need to discover preset tokens via packet inspection or using ONVIF Device Manager.
-- Ensure the profile token (e.g., `MainStreamProfileToken`) used in requests matches the camera's active video stream profile.
-
+- Ensure the profile token (e.g., `MainStreamProfileToken` or `SecondStreamProfileToken`<<) used in requests matches the camera's active video stream profile.
+  Note: in Home Assistant the video stream often seen as name: `MainStreamProfile` (for 1st full resolution video stream)
+        and `SecondStreamProfile` (for 2nd full resolution video stream).
+        As you can see for the *token* only adding to this stream vidoe name the suffix: "token".
+        With that you can get the right one if you have different camera's.
+        So you get the mostly the right token name (without using the onvif device manager and wireshark to figure that out)
+  
 ---
 
 **Last Updated:** 2025-04-18  
