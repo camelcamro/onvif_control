@@ -55,7 +55,16 @@ download *onvif_ptz-control.js* to your host
 chmod +x /home/onvif/onvif_ptz-control.js
 ```
 
-3. Invoke script using `node`:
+3. Install minimist also in the same folder as your script is located:
+
+```bash
+cd /home/onvif
+sudo npm install -g minimist
+```
+
+---
+
+4. Invoke script using `node`:
 
 ```bash
 node /home/onvif/onvif_ptz-control.js --ip=172.20.1.194 --port=8080 ...
