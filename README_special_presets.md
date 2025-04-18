@@ -25,6 +25,49 @@ This document provides detailed information on **predefined special PTZ presets*
 
 ---
 
+# Special ONVIF Preset Commands for IP Cameras
+
+This document provides a comprehensive list of special preset codes used by various IP camera manufacturers. These codes are used to trigger specific camera functions like enabling/disabling human tracking, activating cruise mode, toggling alarms, or performing PTZ resets. Most of these commands are not officially documented in ONVIF specifications and are proprietary.
+
+---
+
+## 📋 Summary & other Infos about Special Preset Codes for IP Cameras
+
+| Manufacturer         | Preset Code | Description |
+|----------------------|-------------|-------------|
+| **Ctronics**         | `37`        | Toggles red and blue light alarm. When a person is detected, the lights flash alternately as a warning. |
+|                      | `56`        | Activates cruise mode, moving the camera through predefined presets. |
+|                      | `92`        | Sets the current position as the guard position and activates human tracking. The camera will return here after tracking. |
+|                      | `94`        | Deactivates human tracking. |
+|                      | `115`       | Resets the PTZ settings to factory defaults, including all presets. |
+| **SV3C**             | `67`        | Sets the current position as the guard position and activates human tracking. |
+|                      | `68`        | Deactivates human tracking. |
+| **Generic IP Cameras** | `65+SET`, then `X+SET` | Sets the guard position to preset point #X. For example, `65+SET`, then `5+SET` sets guard position to preset 5. |
+|                      | `66`        | Starts cruise patrol from presets 9 to 16, with ~10 seconds interval. |
+|                      | `67`        | Starts cruise patrol from presets 17 to 24, with ~15 seconds interval. |
+|                      | `68`        | Starts cruise patrol from presets 25 to 32, with ~20 seconds interval. Also used for power-on preset. |
+|                      | `69`        | Starts cruise patrol from presets 33 to 40, with ~30 seconds interval. |
+|                      | `70`        | Starts cruise patrol from presets 41 to 48, with ~60 seconds interval. |
+|                      | `72`        | Starts cruise patrol from presets 49 to 56, with ~90 seconds interval. |
+|                      | `73`        | Starts cruise patrol from presets 57 to 64, with ~120 seconds interval. |
+|                      | `74`        | Turns off colored night vision and enables IR light. |
+|                      | `75`        | Turns off colored night vision and enables IR auto mode. |
+|                      | `76`        | Enables color night vision without white light. Turns off IR manually. |
+|                      | `77`        | Initiates gimbal reset; moves the camera to top-left for self-check. |
+| **HiSilicon-based**  | `84`        | Opens the On-Screen Display (OSD) menu. |
+|                      | `88`        | Toggles light settings (IR/White), depending on the model. |
+|                      | `95`        | Similar function to OSD; model-dependent. |
+|                      | `123`       | Variant OSD or config menu call. |
+| **Sunba**            | `84 + Add Preset` | Sets a pattern scan; use direction and zoom keys, then Iris+ to complete. |
+|                      | `95 + CALL` | Calls the preset to open the OSD menu. |
+| **ESUNSTAR**         | `150 + SET + X + SET` | Modifies horizontal tracking speed. X=1-10 (1=slowest, 10=fastest). |
+
+---
+
+**Note:** The availability and effect of these preset codes may vary based on firmware version, camera series, or manufacturer. Always refer to your camera’s documentation or contact support if uncertain.
+
+---
+
 ## 🚨 Important Behavior
 
 - Preset **115** resets **all PTZ presets**, including user-defined ones (e.g., Preset001 to Preset256).
