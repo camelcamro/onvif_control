@@ -8,11 +8,11 @@ const args = require('minimist')(process.argv.slice(2), {
   alias: {
     v: 'verbose', d: 'debug', l: 'log', m: 'mute', h: 'help', t: 'time',
     z: 'zoom', p: 'pan', u: 'user', i: 'ip', k: 'token', e: 'preset',
-    n: 'name', r: 'dry-run'
+    n: 'presetname', r: 'dry-run'
   }
 });
 
-const VERSION = '1.0.11';
+const VERSION = '1.0.12';
 const BUILD_DATE = '2025-04-17';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 
@@ -36,7 +36,7 @@ Optional:
   --tilt, -i       Tilt value
   --zoom, -z       Zoom value
   --preset, -e     Preset token (for goto/remove)
-  --name, -n       Preset name (for setpreset)
+  --presetname, -n Preset name (for setpreset)
   --time, -t       Duration (in seconds) for move/zoom
   --debug, -d      Output args in JSON
   --verbose, -v    Show verbose info
@@ -190,10 +190,10 @@ const PTZ = {
   },
 
   setpreset() {
-    if (!args.name) errorOut('--name is required for setpreset');
+    if (!args.presetname) errorOut('--presetname is required for setpreset');
     const body = `<tptz:SetPreset xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
-      <PresetName>${args.name}</PresetName>
+      <PresetName>${args.presetname}</PresetName>
     </tptz:SetPreset>`;
     sendSoap('SetPreset', body);
   },
