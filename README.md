@@ -1,131 +1,153 @@
-# onvif_ptz_controls.js# ONVIF PTZ Control Script
-A command-line tool for controlling PTZ cameras via ONVIF (including WS-Security Digest).
+# ONVIF PTZ Control Script
 
-## Start command
+## Version: 1.0.11  
+## Build Date: 2025-04-17  
+
+---
+
+## 📦 Features
+
+- Full PTZ control (move, zoom, stop, presets, absolute/relative move, status)
+- WS-Security Digest (compatible with ONVIF password authentication)
+- Standalone – does **not** require `onvif-cli` or any ONVIF SDK
+- Logs to console + optional `syslog`
+- Fully scriptable & automatable via CLI
+
+---
+
+## 🔧 Requirements
+
+- Node.js (≥ v14)
+- `minimist` installed via:
+
 ```bash
-node onvif_ptz-control.js --action=<action> [additional parameters]
+npm install minimist
 ```
 
-## Required parameters
-- `--ip` Camera IP
-- `--user` User name
-- `--pass` Password
-- `--token` (optional, default: MainStreamProfileToken)
+---
 
-## Available actions
+## 🚀 Script Setup
 
-### 1. `move`
-Move the camera continuously.
-bash
---pan=<x> --tilt=<y> [--zoom=<z>] --time=<seconds>
-
-Example:
-bash
-node onvif_ptz-control.js --action=move --ip=192.168.1.10 --user=admin --pass=1234 --pan=0.5 --tilt=0 --time=1.5
-
-### 2. zoom
-Zoom only.
-bash
---zoom=<z> --time=<seconds>
-
-### 3. stop
-Stop current movement.
-bash
-node onvif_ptz-control.js --action=stop ...
-
-### 4. goto
-Jump to a preset.
 ```bash
---preset=<token>
+mkdir -p /home/onvif
+mv onvif_ptz-control.js /home/onvif/
+npm install minimist
 ```
 
-### 5. `setpreset`
-Save current position as a preset.
+---
+
+## ⚙️ Usage
+
 ```bash
---name=<presetName>
+node /home/onvif/onvif_ptz-control.js --ip=<IP> --port=<PORT> --user=<USERNAME> --pass=<PASSWORD> --action=<ACTION> [options]
 ```
 
-### 6. `removepreset`
-Delete preset.
+---
+
+## ✅ Required Parameters
+
+| Parameter  | Alias | Description                |
+|------------|-------|----------------------------|
+| `--ip`     | `-i`  | IP of the ONVIF device     |
+| `--port`   |       | Port of ONVIF service (e.g. 8080) |
+| `--user`   | `-u`  | Username for login         |
+| `--pass`   |       | Password for login         |
+| `--action` |       | Action to perform          |
+
+---
+
+## 🔄 Available Actions
+
+| Action        | Required Parameters                                |
+|---------------|----------------------------------------------------|
+| `move`        | `--pan`, `--tilt`, `--time`                        |
+| `zoom`        | `--zoom`, `--time`                                 |
+| `stop`        | *(none)*                                           |
+| `goto`        | `--preset`                                         |
+| `setpreset`   | `--name`                                           |
+| `removepreset`| `--preset`                                         |
+| `presets`     | *(none)*                                           |
+| `status`      | *(none)*                                           |
+| `absolutemove`| `--pan`, `--tilt` *(optional: `--zoom`)*           |
+| `relativemove`| `--pan`, `--tilt` *(optional: `--zoom`)*           |
+| `configoptions`| *(none)*                                         |
+
+---
+
+## 🛠️ Optional Flags
+
+| Flag           | Alias | Description                                     |
+|----------------|-------|-------------------------------------------------|
+| `--token`      | `-k`  | Profile token (default: `MainStreamProfileToken`) |
+| `--preset`     | `-e`  | Preset token                                    |
+| `--name`       | `-n`  | Preset name for saving                          |
+| `--time`       | `-t`  | Duration in seconds                             |
+| `--pan`        | `-p`  | Pan speed or position (float: -1 to 1)          |
+| `--tilt`       | `-i`  | Tilt speed or position (float: -1 to 1)         |
+| `--zoom`       | `-z`  | Zoom speed or level (float: -1 to 1)            |
+| `--verbose`    | `-v`  | Verbose output                                  |
+| `--debug`      | `-d`  | Show parsed parameters                          |
+| `--log`        | `-l`  | Write logs to `syslog` with tag `onvif`         |
+| `--dry-run`    | `-r`  | Don’t send commands, only show output           |
+| `--mute`       | `-m`  | Suppress all output except exit code            |
+| `--help`       | `-h`  | Show help                                       |
+| `--version`    |       | Show version                                    |
+
+---
+
+## 📸 Example Calls (IP `172.2.1.194`, port `8080`, user: `admin`, pass: `1234`)
+
 ```bash
---preset=<token>
+# ▶ Move Right
+--action=move --pan=0.5 --tilt=0 --time=1.5
+
+# ◀ Move Left
+--action=move --pan=-0.5 --tilt=0 --time=1.5
+
+# ▲ Move Up
+--action=move --pan=0 --tilt=0.5 --time=1.5
+
+# ▼ Move Down
+--action=move --pan=0 --tilt=-0.5 --time=1.5
+
+# 🔍 Zoom In
+--action=zoom --zoom=0.5 --time=1.5
+
+# 🔎 Zoom Out
+--action=zoom --zoom=-0.5 --time=1.5
+
+# ⏹ Stop
+--action=stop
+
+# 🎯 Goto Preset
+--action=goto --preset=Preset005
+
+# 💾 Set Preset
+--action=setpreset --name=EntryView
+
+# ❌ Remove Preset
+--action=removepreset --preset=Preset005
+
+# 📋 List All Presets
+--action=presets
+
+# 🛰️ Get PTZ Status
+--action=status
+
+# 📐 Absolute Move
+--action=absolutemove --pan=0.3 --tilt=0.2 --zoom=0.4
+
+# ↔️ Relative Move
+--action=relativemove --pan=0.2 --tilt=0 --zoom=0.1
+
+# ⚙️ Get PTZ Config
+--action=configoptions
 ```
 
-### 7. `presets`
-Display all presets.
+---
 
-### 8. `status`
-Returns current position.
-
-### 9. `absolutemove`
-Absolute positioning.
-```bash
---pan=<x> --tilt=<y> [--zoom=<z>]
-```
-
-### 10. `relativemove`
-Relative movement.
-bash
---pan=<x> --tilt=<y> [--zoom=<z>]
-
-
-### 11. `configoptions`
-Displays all PTZ configuration options.
-
-## Notes
-- Values ​​for `--pan`, `--tilt`, and `--zoom` can be decimal numbers (`0.5` or `0.5` is possible)
-- `--time` is in seconds (e.g., `1.5`)
-- Time values ​​may need to be enclosed in quotation marks (depending on the shell)
-
-## Display help
-If the script is called without parameters or incompletely, a help page is automatically displayed.
-
-
-#################################################################################
-
-examples:
-root@volumio:/home/onvif # node /home/onvif/onvif_ptz-control.js --help
-
-ONVIF PTZ Control Script - Version 1.0.6 (2025-04-17)
-
-Usage:
- node ptz-control.js --action=<action> --ip=IP --port=PORT --user=USER --pass=PASS [options]
-
-Mandatory parameters:
- --ip, -i IP address of the camera
- --port Port number of the camera service
- --user, -u Username for authentication
- --pass Password for authentication
- --action One of the supported actions listed below
-
-Available actions:
- move --pan=X --tilt=Y [--zoom=Z] --time=N Continuous move for N seconds
- zoom --zoom=Z --time=N Zoom move only for N seconds
- stop Stop all movement (pan/tilt/zoom)
- goto --preset=TOKEN Go to a defined preset
- setpreset --name=NAME Save current position as preset
- removepreset --preset=TOKEN Remove preset by token
- presets List all stored presets
- status Retrieve current PTZ status
- absolutemove --pan=X --tilt=Y [--zoom=Z] Move to an absolute PTZ position
- relativemove --pan=X --tilt=Y [--zoom=Z] Relative PTZ movement
- configoptions Get PTZ configuration options
-
-Optional parameters:
- --token=TOKEN, -k Profile token (default: MainStreamProfileToken)
- --name=NAME, -n Name of the preset (used with setpreset)
- --preset=TOKEN, -e Preset token for goto/removepreset
- --time=SECONDS, -t Duration of the move/zoom action
- --pan=X, -p Pan direction or position value
- --tilt=Y, -i Tilt direction or position value
- --zoom=Z, -z Zoom direction or position value
- --debug=1, -d Print debug output in JSON format
- --verbose=1, -v Show detailed console logs
- --log=1, -l Write logs to system log tagged as 'onvif'
- --mute=1, -m Suppress all output, only return exit code
- --dry-run, -r Simulate request without sending it to the camera
- --help, -h Show this help message and exit
- --version Show script version information and exit
+## 🛡️ Security Note
+This tool uses ONVIF-compliant digest authentication with WS-Security headers (password hashed via SHA1 with nonce and timestamp). No plain password is transmitted.--version Show script version information and exit
 
 eg:
 
