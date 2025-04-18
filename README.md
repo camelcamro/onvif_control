@@ -148,7 +148,7 @@ node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin 
 
 ### Zoom Out (1.5s)
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --zoom=-0.5
+node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=-0.5 --time=1.5
 ```
 
 ---
