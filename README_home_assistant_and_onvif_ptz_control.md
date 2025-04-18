@@ -1,6 +1,7 @@
 # Home Assistant Integration for `onvif_ptz-control.js`
 
 **Version:** 1.0.12  
+**Version:** 1.0.12  
 **Author:** camel/ChatGPT 
 **Purpose:** Full-featured ONVIF PTZ camera control via shell_command in Home Assistant
 
