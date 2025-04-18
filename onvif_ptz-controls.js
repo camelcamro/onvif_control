@@ -1,5 +1,5 @@
 // onvif_ptz-control.js
-// ONVIF PTZ Control Script - Version 1.0.11 - Full SOAP Implementation
+// ONVIF PTZ Control Script - Full SOAP Implementation
 
 const crypto = require('crypto');
 const http = require('http');
