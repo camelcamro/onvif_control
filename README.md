@@ -7,10 +7,10 @@
 
 ---
 
-## 📦 Why does someone need it ?
-as i needed in home assitant to execute a command line script (CLI).
-as i want to use full PTZ features to delete, set, goto presets and to be more flexible and home assistant "onvif ptz" is very limited on PTZ features.
-so, i created this project.
+## 📦 Motivation & Inspiration 
+As i needed in home assistant to execute a **command line script (CLI) for onvif PTZ**
+And i wanted to use full PTZ features to delete, set, goto presets and to be more flexible and home assistant "onvif ptz" is very limited on PTZ features.
+So, i created this project.
 
 ## 📦 Features
 
