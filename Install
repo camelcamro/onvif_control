@@ -1,0 +1,39 @@
+# ONVIF PTZ Control Script
+
+## Installation Guide
+
+### 1. Requirements
+- **Node.js** must be installed.
+- **Node.js >= v16.x** is recommended.
+
+Check with:
+```bash
+node -v
+```
+If not present: https://nodejs.org
+
+### 2. Create project directory
+```bash
+mkdir -p /home/onvif
+cd /home/onvif
+```
+
+### 3. Save script
+Save the script under the following path:
+```
+/home/onvif/onvif_ptz-control.js
+```
+
+### 4. Install dependencies
+Change to the script directory and install the required packages:
+```bash
+cd /home/onvif
+npm init -y
+npm install minimist
+```
+
+Done! You can now use the script:
+```bash
+node /home/onvif/onvif_ptz-control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=xxxxxx --action=move --pan=0.5 --tilt=0 --time=1.5
+
+Further information and example commands can be found in the `README.md` file.
