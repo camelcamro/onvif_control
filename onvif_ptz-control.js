@@ -12,9 +12,13 @@ const args = require('minimist')(process.argv.slice(2), {
   }
 });
 
-const VERSION = '1.0.12';
-const BUILD_DATE = '2025-04-17';
+const VERSION = '1.0.13';
+const BUILD_DATE = '2025-04-27';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
+const NO_WAKEUP = parseInt(args.no_wakeup) === 1;
+
+// Timeout in milliseconds for SOAP requests
+const SOCKET_TIMEOUT_MS = 5000;
 
 function showHelp() {
   console.log(`
@@ -45,6 +49,7 @@ Optional:
   --mute, -m       Only return error code
   --help, -h       Show help
   --version        Show version
+  --no_wakeup      Disable wakeup before each action
 `);
   process.exit(0);
 }
@@ -97,8 +102,21 @@ function buildWSSecurity(username, password) {
   };
 }
 
-// === SOAP Request ===
+function wakeupDevice(cb) {
+  if (args.verbose) console.log('[WAKEUP] Sending GetDeviceInformation...');
+  const body = `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
+  realSendSoap('GetDeviceInformation', body, cb);
+}
+
 function sendSoap(action, body, cb) {
+  if (!NO_WAKEUP && action !== 'GetDeviceInformation') {
+    wakeupDevice(() => realSendSoap(action, body, cb));
+  } else {
+    realSendSoap(action, body, cb);
+  }
+}
+
+function realSendSoap(action, body, cb) {
   const ws = buildWSSecurity(args.user, args.pass);
   const soapEnvelope = `
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
@@ -121,6 +139,7 @@ function sendSoap(action, body, cb) {
     port: args.port,
     method: 'POST',
     path: '/onvif/ptz_service',
+    timeout: SOCKET_TIMEOUT_MS,
     headers: {
       'Content-Type': 'application/soap+xml; charset=utf-8; action="http://www.onvif.org/ver20/ptz/wsdl/' + action + '"',
       'Content-Length': Buffer.byteLength(soapEnvelope)
@@ -129,17 +148,22 @@ function sendSoap(action, body, cb) {
     let data = '';
     res.on('data', chunk => data += chunk);
     res.on('end', () => {
-      if (args.verbose) console.log('\nRESPONSE:\n', data);
+      if (args.verbose) console.log(`\nRESPONSE for ${action}:\n`, data);
       if (args.log) logMessage(`SOAP response for ${action}: ${data}`);
       cb && cb();
     });
   });
 
-  if (args.log) logMessage(`SOAP request for ${action}: ${body.replace(/[\n\r]+/g, '')}`);
-  req.on('error', err => {
-    errorOut(`HTTP error: ${err.message}`);
+  req.on('timeout', () => {
+    req.destroy();
+    errorOut(`Timeout on ${action}`);
   });
 
+  req.on('error', err => {
+    errorOut(`HTTP error on ${action}: ${err.message}`);
+  });
+
+  if (args.log) logMessage(`SOAP request for ${action}: ${body.replace(/[\n\r]+/g, '')}`);
   req.write(soapEnvelope);
   req.end();
 }
