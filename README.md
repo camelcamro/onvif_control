@@ -1,8 +1,8 @@
 
 # ONVIF PTZ Control Script
 
-**Version:** 1.0.12  
-**Build Date:** 2025-04-17  
+**Version:** 1.0.13  
+**Build Date:** 2025-04-27 
 **Author:** camel (camelcamro)
 
 ---
@@ -84,33 +84,33 @@ node /home/onvif/onvif_ptz-control.js --ip=172.20.1.194 --port=8080 ...
 
 ### Mandatory Parameters
 
-| Option     | Alias | Description                        |
-|------------|-------|------------------------------------|
-| `--ip`     | `-i`  | IP of camera                       |
-| `--port`         |       | Port of ONVIF service (e.g. 8080) |
-| `--user`   | `-u`  | Username                           |
-| `--pass`         |       | Password                           |
-| `--action`       |       | Action to perform (`move`, `zoom`, `goto`, etc.) |
+| Option     | Alias | Description                                      |
+|------------|-------|--------------------------------------------------|
+| `--ip`     | `-i`  | IP of camera                                     |
+| `--port`   |       | Port of ONVIF service (e.g. 8080)                |
+| `--user`   | `-u`  | Username                                         |
+| `--pass`   |       | Password                                         | 
+| `--action` |       | Action to perform (`move`, `zoom`, `goto`, etc.) |
 
 ### Optional Parameters
 
-| Option       | Alias | Description                                  |
-|--------------|-------|----------------------------------------------|
-| `--token`    | `-k`  | Profile token (default: `MainStreamProfileToken`) |
-| `--preset`   | `-e`  | Preset token (used with `goto`, `removepreset`) |
-| `--presetname`| `-n` | Preset name (used with `setpreset`)            |
-| `--time`     | `-t`  | Duration in seconds (for movement/zoom)       |
-| `--pan`      | `-p`  | Pan direction/position (-1.0 to 1.0)          |
-| `--tilt`     | `-i`  | Tilt direction/position (-1.0 to 1.0)         |
-| `--zoom`     | `-z`  | Zoom direction/position (-1.0 to 1.0)         |
-| `--verbose`  | `-v`  | Enable verbose output                        |
-| `--debug`    | `-d`  | Show debug JSON                              |
-| `--dry-run`  | `-r`  | Show parameters but do not send SOAP         |
-| `--log`      | `-l`  | Write to system log                          |
-| `--mute`     | `-m`  | Suppress all output except return code       |
-| `--help`     | `-h`  | Show usage                                   |
-| `--version`        |       | Show version info                         |
-
+| Option        | Alias | Description                                       |
+|---------------|-------|---------------------------------------------------|
+| `--token`     | `-k`  | Profile token (default: `MainStreamProfileToken`) |
+| `--preset`    | `-e`  | Preset token (used with `goto`, `removepreset`)   |
+| `--presetname`| `-n`  | Preset name (used with `setpreset`)               |
+| `--time`      | `-t`  | Duration in seconds (for movement/zoom)           |
+| `--pan`       | `-p`  | Pan direction/position (-1.0 to 1.0)              |
+| `--tilt`      | `-i`  | Tilt direction/position (-1.0 to 1.0)             |
+| `--zoom`      | `-z`  | Zoom direction/position (-1.0 to 1.0)             |
+| `--verbose`   | `-v`  | Enable verbose output                             |
+| `--debug`     | `-d`  | Show debug JSON                                   |
+| `--dry-run`   | `-r`  | Show parameters but do not send SOAP              |
+| `--log`       | `-l`  | Write to system log                               |
+| `--mute`      | `-m`  | Suppress all output except return code            |
+| `--help`      | `-h`  | Show usage                                        |
+| `--version`   |       | Show version info                                 |
+| `--no_wakeup  |       | Disable wakeup / otherwise send GetDeviceInfo befo|
 ---
 
 ## 📚 Examples
