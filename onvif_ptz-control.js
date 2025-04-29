@@ -12,10 +12,11 @@ const args = require('minimist')(process.argv.slice(2), {
   }
 });
 
-const VERSION = '1.0.13';
-const BUILD_DATE = '2025-04-27';
+const VERSION = '1.0.14';
+const BUILD_DATE = '2025-04-29';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
-const NO_WAKEUP = parseInt(args.no_wakeup) === 1;
+const WAKEUP = 'wakeup' in args;
+const WAKEUP_SIMPLE = 'wakeup_simple' in args;
 
 // Timeout in milliseconds for SOAP requests
 const SOCKET_TIMEOUT_MS = 5000;
@@ -35,21 +36,22 @@ Mandatory Parameters:
   --action         One of: move, zoom, stop, goto, setpreset, removepreset, presets, status, absolutemove, relativemove, configoptions
 
 Optional:
-  --token, -k      ProfileToken (default: MainStreamProfileToken)
-  --pan, -p        Pan value
-  --tilt, -i       Tilt value
-  --zoom, -z       Zoom value
-  --preset, -e     Preset token (for goto/remove)
-  --presetname, -n Preset name (for setpreset)
-  --time, -t       Duration (in seconds) for move/zoom
-  --debug, -d      Output args in JSON
-  --verbose, -v    Show verbose info
-  --log, -l        Log to system log
-  --dry-run, -r    Simulate request
-  --mute, -m       Only return error code
-  --help, -h       Show help
-  --version        Show version
-  --no_wakeup      Disable wakeup before each action
+  --token, -k                   ProfileToken (default: MainStreamProfileToken)
+  --pan, -p                     Pan value
+  --tilt, -i                    Tilt value
+  --zoom, -z                    Zoom value
+  --preset=<PRESETNAME>, -e     Preset token (for goto/remove eg: Preset001)
+  --presetname=<PRESETNAME>, -n Preset name (for setpreset eg: Preset001)
+  --time, -t                    Duration (in seconds) for move/zoom
+  --wakeup                      Send full wakeup before action cmd (GetNodes, GetConfigurations, GetPresets)
+  --wakeup_simple               Send simple wakeup before action cmd (GetDeviceInformation only)
+  --debug, -d                   Output args in JSON
+  --verbose, -v                 Show verbose info
+  --log, -l                     Log to system log
+  --dry-run, -r                 Simulate request
+  --mute, -m                    Only return error code
+  --help, -h                    Show help
+  --version                     Show version
 `);
   process.exit(0);
 }
@@ -102,18 +104,36 @@ function buildWSSecurity(username, password) {
   };
 }
 
-function wakeupDevice(cb) {
-  if (args.verbose) console.log('[WAKEUP] Sending GetDeviceInformation...');
+function wakeupSimple(cb) {
+  if (args.verbose) console.log('[WAKEUP_SIMPLE] Sending GetDeviceInformation...');
   const body = `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
   realSendSoap('GetDeviceInformation', body, cb);
 }
 
+function wakeupSequence(cb) {
+  if (args.verbose) console.log('[WAKEUP] Sending Wakeup Sequence (GetNodes, GetConfigurations, GetPresets)...');
+  const steps = [
+    () => realSendSoap('GetNodes', '<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', steps[1]),
+    () => realSendSoap('GetConfigurations', '<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', steps[2]),
+    () => realSendSoap('GetPresets', `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`, cb)
+  ];
+  steps[0]();
+}
+
 function sendSoap(action, body, cb) {
-  if (!NO_WAKEUP && action !== 'GetDeviceInformation') {
-    wakeupDevice(() => realSendSoap(action, body, cb));
-  } else {
-    realSendSoap(action, body, cb);
+  const wakeupTasks = [];
+  if (WAKEUP) wakeupTasks.push(cb => wakeupSequence(cb));
+  if (WAKEUP_SIMPLE) wakeupTasks.push(cb => wakeupSimple(cb));
+
+  let index = 0;
+  function next() {
+    if (index < wakeupTasks.length) {
+      wakeupTasks[index++](next);
+    } else {
+      realSendSoap(action, body, cb);
+    }
   }
+  next();
 }
 
 function realSendSoap(action, body, cb) {
