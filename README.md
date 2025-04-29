@@ -1,8 +1,8 @@
 
 # ONVIF PTZ Control Script
 
-**Version:** 1.0.13  
-**Build Date:** 2025-04-27 
+**Version:** 1.0.14  
+**Build Date:** 2025-04-29 
 **Author:** camel (camelcamro)
 
 ---
