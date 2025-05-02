@@ -14,6 +14,32 @@ This document provides detailed information on **predefined special PTZ presets*
 | `94`      | Disable tracking |
 | `115`     | Reset PTZ module to **factory defaults**, including all stored presets |
 
+
+# Ctronics PTZ 5 MP (C6F0SoZ3N0PcL2) – Camera Command Codes
+
+Diese Kamera unterstützt spezielle Steuerbefehle, um Funktionen wie Alarmlichter, Guard-Modus, Patrol oder IR-Steuerung zu aktivieren. Untenstehend eine Übersicht der unterstützten Codes und deren Bedeutung.
+
+## 📋 Befehlstabelle
+
+| Funktion         | Code | Call         | Setup | Bemerkung                       |
+|------------------|------|--------------|-------|----------------------------------|
+| Red/Blue lights  | 37   | ON           | OFF   | Alarmlichter an/aus             |
+| Guard            | 92   | ON / ACTIVATE| SET   | Aktiviert Guard-Modus           |
+| Guard            | 115  | CLEAR        |       | Guard-Modus löschen             |
+| Guard            | 91   | OFF          |       | Deaktiviert Guard-Modus         |
+| Patrol           | 56   | ON           | OFF   | Folge Presets (1, 2, 3, ...)    |
+| IR               | 82   | ON           |       | Infrarot einschalten            |
+| IR               | 83   | OFF          |       | Infrarot ausschalten            |
+| IR               | 81   | AUTO         |       | Automatische IR-Auswahl         |
+
+## 📝 Hinweise
+
+- Alle Codes gelten für das Modell **Ctronics PTZ 5 MP** mit Kennung **C6F0SoZ3N0PcL2**
+- Die Steuerung kann je nach Software per HTTP-API, Shell-Script oder App ausgelöst werden.
+- Die Verwendung von `Setup`-Werten ist abhängig vom Kameramodell bzw. der Firmwareversion.
+
+
+
 ---
 
 ## ✅ Confirmed Preset IDs (SV3C)
