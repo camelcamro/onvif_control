@@ -1,8 +1,8 @@
 
 # ONVIF PTZ Control Script
 
-**Version:** 1.0.14  
-**Build Date:** 2025-04-29 
+**Version:** 1.1.0 (Full Extended)  
+**Build Date:** 2025-05-05 
 **Author:** camel (camelcamro)
 
 ---
@@ -28,13 +28,23 @@ So, i created this project.
 
 ## 📁 Installation Guide
 
+
+- Full ONVIF device control (reboot, factory reset, set time)
+- Stream & snapshot URI fetch
+- Device information: hostname, capabilities, system logs
+- Video encoder configuration get/set
+- User management (get/add/delete)
+- Network and DNS management (IP/DHCP/DNS)
+- Motion detection, NTP and event subscription features
+
+
 ### ✅ Requirements
 
 - **Node.js** (>= 18.x)  
 - **npm**  
 - **Network access** to ONVIF-compatible camera  
 - **Linux with logger** command (for system log support)
-- **minimist** installed in same directy as where the *onvif_ptz-controls.js* file is located (see section: Setup) 
+- **minimist** installed in same directy as where the *onvif_controls.js* file is located (see section: Setup) 
  
 ### 🧰 Install on a Raspberry Pi (Raspbian/Debian)
 
@@ -52,15 +62,15 @@ sudo apt install wireshark
 
 ## ⚙️ Setup
 
-download *onvif_ptz-control.js* to your host
+download *onvif_control.js* to your host
 (note: If needed install "node" and "minimist" (needs to be installed also in the same folder as script gfile will be running)
 (see "Install" sections)
 
-1. Place `onvif_ptz-control.js` in eg: `/home/onvif/`
+1. Place `onvif_control.js` in eg: `/home/onvif/`
 2. Make sure the script is executable:
 
 ```bash
-chmod +x /home/onvif/onvif_ptz-control.js
+chmod +x /home/onvif/onvif_control.js
 ```
 
 3. Install minimist also in the same folder as your script is located:
@@ -75,7 +85,7 @@ sudo npm install -g minimist
 4. Invoke script using `node`:
 
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.20.1.194 --port=8080 ...
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 ```
 
 ---
@@ -114,7 +124,7 @@ node /home/onvif/onvif_ptz-control.js --ip=172.20.1.194 --port=8080 ...
 
 ## 📚 Examples
 
-Assume script is located at `/home/onvif/onvif_ptz-control.js`
+Assume script is located at `/home/onvif/onvif_control.js`
 
 ---
 
@@ -122,32 +132,32 @@ Assume script is located at `/home/onvif/onvif_ptz-control.js`
 
 ### Move Right (1.5s)
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0.5 --tilt=0 --time=1.5
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0.5 --tilt=0 --time=1.5
 ```
 
 ### Move Left (1.5s)
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=-0.5
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=-0.5
 ```
 
 ### Move Up (1.5s)
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0 --tilt=0.5
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0 --tilt=0.5
 ```
 
 ### Move Down (1.5s)
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0 --tilt=-0.5
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0 --tilt=-0.5
 ```
 
 ### Zoom In (1.5s)
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=0.5 --time=1.5
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=0.5 --time=1.5
 ```
 
 ### Zoom Out (1.5s)
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=-0.5 --time=1.5
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=-0.5 --time=1.5
 ```
 
 ---
@@ -155,17 +165,17 @@ node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin 
 ## 🧪 Goto, Save, Delete Preset
 ### Save Preset
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=setpreset --presetname=Preset005
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=setpreset --presetname=Preset005
 ```
 
 ### Go to Preset
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=goto --preset=Preset005
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=goto --preset=Preset005
 ```
 
 ### Remove Preset
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=removepreset --preset=Preset005
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=removepreset --preset=Preset005
 ```
 
 ---
@@ -173,20 +183,122 @@ node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin 
 ## 🧪 Status, Configs & Listing
 ### List Presets
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=presets
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=presets
 ```
 
 ### Get PTZ Status
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=status
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=status
 ```
 
 ### Get PTZ Config Options
 ```bash
-node /home/onvif/onvif_ptz-control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=configoptions
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=configoptions
 ```
 
 ---
+
+
+---
+
+## 🧪 Device Control
+
+### Reboot Device
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reboot
+```
+
+### Factory Reset
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=factoryreset
+```
+
+### Set Date and Time
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=setdatetime
+```
+
+---
+
+## 🧪 Stream & Snapshot
+
+### Get Snapshot URI
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_snapshot_uri
+```
+
+### Get Stream URI
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_stream_uri
+```
+
+---
+
+## 🧪 Info & Network
+
+### Get System Info
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_info
+```
+
+### Get Capabilities
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_capabilities
+```
+
+### Get/Set Network Interfaces
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_network_interfaces
+```
+
+---
+
+## 🧪 Users & Security
+
+### Get Users
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_users
+```
+
+### Add User
+```bash
+node onvif_control.js --ip=... --port=... --user=admin --pass=adminpass --action=add_user \
+  --new_username=testuser --new_password=1234 --new_userlevel=User
+```
+
+### Delete User
+```bash
+node onvif_control.js --ip=... --port=... --user=admin --pass=adminpass --action=delete_user \
+  --del_username=testuser
+```
+
+---
+
+## 🧪 DNS / NTP / Logs / Events
+
+### Get System Logs
+```bash
+node onvif_control.js --action=get_system_logs ...
+```
+
+### Set NTP Server
+```bash
+node onvif_control.js --action=set_ntp ...
+```
+
+### Set/Get DNS
+```bash
+node onvif_control.js --action=get_dns
+```
+
+```bash
+node onvif_control.js --action=set_dns
+```
+
+### Subscribe to Events
+```bash
+node onvif_control.js --action=subscribe_events
+```
 
 ## 🧠 Expert & Troubleshooting
 
