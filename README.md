@@ -1,5 +1,5 @@
 
-# ONVIF PTZ Control Script
+# ONVIF Control Script
 
 **Version:** 1.1.0 (Full Extended)  
 **Build Date:** 2025-05-05 
