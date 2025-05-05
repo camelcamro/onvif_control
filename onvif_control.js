@@ -1,8 +1,9 @@
 // onvif_control.js
-// ONVIF PTZ Control Script - Full SOAP Implementation
+// ONVIF Control Script - Full SOAP Implementation
 
 const crypto = require('crypto');
 const http = require('http');
+const xml2js = require("xml2js");
 const { execSync } = require('child_process');
 const args = require('minimist')(process.argv.slice(2), {
   alias: {
@@ -23,50 +24,50 @@ const SOCKET_TIMEOUT_MS = 5000;
 
 function showHelp() {
   console.log(`
-ONVIF PTZ Control Script - Version ${VERSION} (${BUILD_DATE})
-
-Usage:
-  node ptz-control.js --action=<action> --ip=IP --port=PORT --user=USER --pass=PASS [options]
-
-Mandatory Parameters:
+  ONVIF Control Script - Version ${VERSION} (${BUILD_DATE})
+  
+  Usage:
+  node onvif-control.js --action=<action> --ip=IP --port=PORT --user=USER --pass=PASS [options]
+  
+  Mandatory Parameters:
   --ip, -i         Camera IP
   --port           Camera ONVIF port (e.g. 8080)
   --user, -u       Username
   --pass           Password
   --action         One of: move, zoom, stop, goto, setpreset, removepreset, presets, status, absolutemove, relativemove, configoptions
-                    additional action commands:
-                     reboot                         
-                     factoryreset                   
-                     setdatetime                    
-                     get_snapshot_uri               
-                     get_stream_uri                 
-                     get_profiles                   
-                     get_video_encoder_configuration
-                     set_video_encoder_configuration
-                     get_system_date_and_time       
-                     get_system_info                
-                     get_capabilities               
-                     get_network_interfaces         
-                     set_network_interfaces         
-                     get_users                      
-                     add_user                       
-                     delete_user                    
-                     set_ntp                        
-                     get_system_logs                
-                     get_dns                        
-                     set_dns                        
-                     get_motion_detection           
-                     set_motion_detection           
-                     get_event_properties           
-                     subscribe_events               
-                     gethostname                    
-                     sethostname                    
-                     set_static_ip                  
-                     enable_dhcp                    
-                     reset_password                 
-                     get_device_information         
-
-Optional:
+            additional action commands:
+              reboot
+              factoryreset
+              setdatetime
+              get_snapshot_uri
+              get_stream_uri
+              get_profiles
+              get_video_encoder_configuration
+              set_video_encoder_configuration
+              get_system_date_and_time
+              get_system_info
+              get_capabilities
+              get_network_interfaces
+              set_network_interfaces
+              get_users
+              add_user
+              delete_user
+              set_ntp
+              get_system_logs
+              get_dns
+              set_dns
+              get_motion_detection
+              set_motion_detection
+              get_event_properties
+              subscribe_events
+              gethostname
+              sethostname
+              set_static_ip
+              enable_dhcp
+              reset_password
+              get_device_information
+  
+  Optional:
   --token, -k                   ProfileToken (default: MainStreamProfileToken)
   --pan, -p                     Pan value
   --tilt, -i                    Tilt value
@@ -96,20 +97,19 @@ Optional:
   --bitrate                     Bitrate in kbps for encoder
   --codec                       Codec type (e.g. H264)
   --eventtype                   Event filter type (optional for --action=subscribe_events)
-  --enable                      Enable flag (1 or 0) for motion detection
-
+  --enable                      Enable flag (1 or 0) for motion detection 
   --new_username                Username to create (used with --action=add_user)
   --new_password                Password for new user
   --new_userlevel               Access level (Administrator, User, Operator)
   --del_username                Username to delete (used with --action=delete_user)
-                    
-`);
+  
+  `);
   process.exit(0);
 }
 
 if (args.help) showHelp();
 if (args.version) {
-  console.log(`ONVIF PTZ Control Script\nVersion: ${VERSION}\nBuild Date: ${BUILD_DATE}`);
+  console.log(`ONVIF Control Script\nVersion: ${VERSION}\nBuild Date: ${BUILD_DATE}`);
   process.exit(0);
 }
 
@@ -243,10 +243,33 @@ function realSendSoap(action, body, cb) {
     let data = '';
     res.on('data', chunk => data += chunk);
     res.on('end', () => {
-      if (args.verbose) console.log(`\nRESPONSE for ${action}:\n`, data);
-      if (args.log) logMessage(`SOAP response for ${action}: ${data}`);
-      cb && cb();
+  if (args.verbose || args.debug) {
+    console.log(`
+RESPONSE for ${action}:
+`, data);
+    if (args.log) logMessage(`SOAP response for ${action}: ${data}`);
+  } else {
+    xml2js.parseString(data, { explicitArray: false }, (err, result) => {
+      if (err) {
+        console.error("[ERROR] Failed to parse XML:", err.message);
+        return;
+      }
+      try {
+        const body = result['s:Envelope']['s:Body'];
+        const actionKey = Object.keys(body)[0];
+        const payload = body[actionKey];
+        console.log("[RESPONSE]", actionKey);
+        for (const k in payload) {
+          const val = payload[k];
+          console.log(`  ${k}:`, typeof val === 'string' ? val : JSON.stringify(val));
+        }
+      } catch (e) {
+        console.error("[ERROR] Response structure unexpected:", e.message);
+      }
     });
+  }
+  cb && cb();
+});
   });
 
   req.on('timeout', () => {
