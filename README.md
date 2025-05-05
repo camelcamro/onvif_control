@@ -121,7 +121,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--codec`                  |       | Video codec type (e.g., H264)                                    |
 | `--eventtype`              |       | Filter for event subscriptions (optional)                        |
 | `--enable`                 |       | Enable/Disable flags (e.g., for motion detection)                |
------------------------------|--------------------------------------------------------------------------|
+|----------------------------|-------|------------------------------------------------------------------|
 | `--token`                  | `-k`  | Profile token (default: `MainStreamProfileToken`)                |
 | `--pan`                    | `-p`  | Pan direction/position (-1.0 to 1.0)                             |
 | `--tilt`                   | `-i`  | Tilt direction/position (-1.0 to 1.0)                            |
