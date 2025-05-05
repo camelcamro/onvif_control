@@ -34,37 +34,37 @@ Mandatory Parameters:
   --user, -u       Username
   --pass           Password
   --action         One of: move, zoom, stop, goto, setpreset, removepreset, presets, status, absolutemove, relativemove, configoptions
-
-  reboot                         ONVIF: SystemReboot
-  factoryreset                   ONVIF: FactoryReset
-  setdatetime                    ONVIF: SetSystemDateAndTime
-  get_snapshot_uri               ONVIF: GetSnapshotUri
-  get_stream_uri                 ONVIF: GetStreamUri
-  get_profiles                   ONVIF: GetProfiles
-  get_video_encoder_configuration ONVIF: GetVideoEncoderConfiguration
-  set_video_encoder_configuration ONVIF: SetVideoEncoderConfiguration
-  get_system_date_and_time       ONVIF: GetSystemDateAndTime
-  get_system_info                ONVIF: GetDeviceInformation
-  get_capabilities               ONVIF: GetCapabilities
-  get_network_interfaces         ONVIF: GetNetworkInterfaces
-  set_network_interfaces         ONVIF: SetNetworkInterfaces
-  get_users                      ONVIF: GetUsers
-  add_user                       ONVIF: CreateUsers
-  delete_user                    ONVIF: DeleteUsers
-  set_ntp                        ONVIF: SetNTP
-  get_system_logs                ONVIF: GetSystemLog
-  get_dns                        ONVIF: GetDNS
-  set_dns                        ONVIF: SetDNS
-  get_motion_detection           ONVIF: GetMotionDetection
-  set_motion_detection           ONVIF: SetMotionDetection
-  get_event_properties           ONVIF: GetEventProperties
-  subscribe_events               ONVIF: Subscribe
-  gethostname                    ONVIF: GetHostname
-  sethostname                    ONVIF: SetHostname
-  set_static_ip                  ONVIF: SetNetworkInterfaces
-  enable_dhcp                    ONVIF: SetNetworkInterfaces
-  reset_password                 ONVIF: SetUser
-  get_device_information         ONVIF: GetDeviceInformation
+                    additional action commnds:
+                     reboot                         
+                     factoryreset                   
+                     setdatetime                    
+                     get_snapshot_uri               
+                     get_stream_uri                 
+                     get_profiles                   
+                     get_video_encoder_configuration
+                     set_video_encoder_configuration
+                     get_system_date_and_time       
+                     get_system_info                
+                     get_capabilities               
+                     get_network_interfaces         
+                     set_network_interfaces         
+                     get_users                      
+                     add_user                       
+                     delete_user                    
+                     set_ntp                        
+                     get_system_logs                
+                     get_dns                        
+                     set_dns                        
+                     get_motion_detection           
+                     set_motion_detection           
+                     get_event_properties           
+                     subscribe_events               
+                     gethostname                    
+                     sethostname                    
+                     set_static_ip                  
+                     enable_dhcp                    
+                     reset_password                 
+                     get_device_information         
 
 Optional:
   --token, -k                   ProfileToken (default: MainStreamProfileToken)
@@ -82,27 +82,27 @@ Optional:
   --dry-run, -r                 Simulate request
   --mute, -m                    Only return error code
   --help, -h                    Show help
-  --version
-  --hostname                   New hostname (used with --action=sethostname)
-  --ip                         IP address (used with --action=set_network_interfaces)
-  --netmask                    Netmask (used with --action=set_network_interfaces)
-  --gateway                    Gateway IP (used with --action=set_network_interfaces)
-  --dhcp                       Enable DHCP (1 or 0)
-  --dns1, --dns2               DNS servers (used with --action=set_dns)
-  --ntp_server                 NTP server IP (used with --action=set_ntp)
-  --datetime                   Manual UTC datetime (optional for setdatetime)
-  --username                   Username (used with --action=reset_password)
-  --resolution                 Resolution (e.g. 1920x1080) for video encoder
-  --bitrate                    Bitrate in kbps for encoder
-  --codec                      Codec type (e.g. H264)
-  --eventtype                  Event filter type (optional for --action=subscribe_events)
-  --enable                     Enable flag (1 or 0) for motion detection
+  --version                     Show version
+  --hostname                    New hostname (used with --action=sethostname)
+  --ip                          IP address (used with --action=set_network_interfaces)
+  --netmask                     Netmask (used with --action=set_network_interfaces)
+  --gateway                     Gateway IP (used with --action=set_network_interfaces)
+  --dhcp                        Enable DHCP (1 or 0)
+  --dns1, --dns2                DNS servers (used with --action=set_dns)
+  --ntp_server                  NTP server IP (used with --action=set_ntp)
+  --datetime                    Manual UTC datetime (optional for setdatetime)
+  --username                    Username (used with --action=reset_password)
+  --resolution                  Resolution (e.g. 1920x1080) for video encoder
+  --bitrate                     Bitrate in kbps for encoder
+  --codec                       Codec type (e.g. H264)
+  --eventtype                   Event filter type (optional for --action=subscribe_events)
+  --enable                      Enable flag (1 or 0) for motion detection
 
   --new_username                Username to create (used with --action=add_user)
   --new_password                Password for new user
   --new_userlevel               Access level (Administrator, User, Operator)
   --del_username                Username to delete (used with --action=delete_user)
-                     Show version
+                    
 `);
   process.exit(0);
 }
