@@ -34,7 +34,7 @@ Mandatory Parameters:
   --user, -u       Username
   --pass           Password
   --action         One of: move, zoom, stop, goto, setpreset, removepreset, presets, status, absolutemove, relativemove, configoptions
-                    additional action commnds:
+                    additional action commands:
                      reboot                         
                      factoryreset                   
                      setdatetime                    
@@ -369,8 +369,7 @@ const PTZ = {
       <ConfigurationToken>${PROFILE_TOKEN}</ConfigurationToken>
     </tptz:GetConfigurationOptions>`;
     sendSoap('GetConfigurationOptions', body);
-  }
-
+  },
   reboot() {
     const body = `<tds:SystemReboot xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
     sendSoap('SystemReboot', body);
