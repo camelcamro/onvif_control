@@ -69,6 +69,7 @@ This document provides a comprehensive list of special preset codes used by vari
 | **SV3C**             | `67`        | Sets the current position as the guard position and activates human tracking. |
 |                      | `68`        | Deactivates human tracking. |
 | **Generic IP Cameras** | `65+SET`, then `X+SET` | Sets the guard position to preset point #X. For example, `65+SET`, then `5+SET` sets guard position to preset 5. |
+|                      | `65         | Starts cruise patrol from presets 1 to 8, with ~5 seconds interval. |
 |                      | `66`        | Starts cruise patrol from presets 9 to 16, with ~10 seconds interval. |
 |                      | `67`        | Starts cruise patrol from presets 17 to 24, with ~15 seconds interval. |
 |                      | `68`        | Starts cruise patrol from presets 25 to 32, with ~20 seconds interval. Also used for power-on preset. |
@@ -80,6 +81,7 @@ This document provides a comprehensive list of special preset codes used by vari
 |                      | `75`        | Turns off colored night vision and enables IR auto mode. |
 |                      | `76`        | Enables color night vision without white light. Turns off IR manually. |
 |                      | `77`        | Initiates gimbal reset; moves the camera to top-left for self-check. |
+
 | **HiSilicon-based**  | `84`        | Opens the On-Screen Display (OSD) menu. |
 |                      | `88`        | Toggles light settings (IR/White), depending on the model. |
 |                      | `95`        | Similar function to OSD; model-dependent. |
