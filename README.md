@@ -103,7 +103,25 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 
 ### Optional Parameters
 | Option                     | Alias | Description                                                      |
-|----------------------------|--------------------------------------------------------------------------|
+|----------------------------|-------|------------------------------------------------------------------|
+| `--new_username`           |       | Username to create (used with `--action=add_user`)               |
+| `--new_password`           |       | Password for new user                                            |
+| `--new_userlevel`          |       | Access level (`Administrator`, `User`, etc.)                     |
+| `--del_username`           |       | Username to delete (used with `--action=delete_user`)            |
+| `--hostname`               |       | New hostname (used with `--action=sethostname`)                  |
+| `--netmask`                |       | Netmask (used with `--action=set_network_interfaces`)            |
+| `--gateway`                |       | Gateway IP (used with `--action=set_network_interfaces`)         |
+| `--dhcp`                   |       | Enable DHCP (`1` or `0`)                                         |
+| `--dns1`, `--dns2`         |       | DNS servers (used with `--action=set_dns`)                       |
+| `--ntp_server`             |       | NTP server (used with `--action=set_ntp`)                        |
+| `--datetime`               |       | Manual time string for `setdatetime` (optional)                  |
+| `--username`               |       | Username to update (used with `--action=reset_password`)         |
+| `--resolution`             |       | e.g., `1920x1080` for encoder config                             |
+| `--bitrate`                |       | Bitrate for encoder in kbps                                      |
+| `--codec`                  |       | Video codec type (e.g., H264)                                    |
+| `--eventtype`              |       | Filter for event subscriptions (optional)                        |
+| `--enable`                 |       | Enable/Disable flags (e.g., for motion detection)                |
+-----------------------------|--------------------------------------------------------------------------|
 | `--token`                  | `-k`  | Profile token (default: `MainStreamProfileToken`)                |
 | `--pan`                    | `-p`  | Pan direction/position (-1.0 to 1.0)                             |
 | `--tilt`                   | `-i`  | Tilt direction/position (-1.0 to 1.0)                            |
