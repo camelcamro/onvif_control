@@ -44,7 +44,8 @@ So, i created this project.
 - **npm**  
 - **Network access** to ONVIF-compatible camera  
 - **Linux with logger** command (for system log support)
-- **minimist** installed in same directy as where the *onvif_controls.js* file is located (see section: Setup) 
+- **minimist** installed in same directy as where the *onvif_controls.js* file is located (see section: Setup)
+- **xml2js** installed in same directy as where the *onvif_controls.js* file is located (see section: Setup)
  
 ### 🧰 Install on a Raspberry Pi (Raspbian/Debian)
 
@@ -80,9 +81,14 @@ cd /home/onvif
 sudo npm install -g minimist
 ```
 
----
+4. Install minimist also in the same folder as your script is located:
 
-4. Invoke script using `node`:
+```bash
+cd /home/onvif
+sudo npm install xml2js
+```
+
+5. Invoke script using `node`:
 
 ```bash
 node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
