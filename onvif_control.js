@@ -13,8 +13,8 @@ const args = require('minimist')(process.argv.slice(2), {
   }
 });
 
-const VERSION = '1.1.0';
-const BUILD_DATE = '2025-05-05';
+const VERSION = '1.1.1';
+const BUILD_DATE = '2025-05-12';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
@@ -401,8 +401,31 @@ const PTZ = {
     const body = `<tds:FactoryReset xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
     sendSoap('FactoryReset', body);
   },
+
   setdatetime() {
-    const body = `<tds:SetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
+    const now = new Date();
+    const timezone = "GMT+00:00";
+
+    const body = `<tds:SetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+      <tds:DateTimeType>Manual</tds:DateTimeType>
+      <tds:DaylightSavings>false</tds:DaylightSavings>
+      <tds:TimeZone>
+        <tt:TZ>${timezone}</tt:TZ>
+      </tds:TimeZone>
+      <tds:UTCDateTime>
+        <tt:Time>
+          <tt:Hour>${now.getHours()}</tt:Hour>
+          <tt:Minute>${now.getMinutes()}</tt:Minute>
+          <tt:Second>${now.getSeconds()}</tt:Second>
+        </tt:Time>
+        <tt:Date>
+          <tt:Year>${now.getFullYear()}</tt:Year>
+          <tt:Month>${now.getMonth() + 1}</tt:Month>
+          <tt:Day>${now.getDate()}</tt:Day>
+        </tt:Date>
+      </tds:UTCDateTime>
+    </tds:SetSystemDateAndTime>`;
+
     sendSoap('SetSystemDateAndTime', body);
   },
   get_snapshot_uri() {
