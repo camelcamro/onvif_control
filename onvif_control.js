@@ -244,10 +244,8 @@ function realSendSoap(action, body, cb) {
     res.on('data', chunk => data += chunk);
     res.on('end', () => {
   if (args.verbose || args.debug) {
-    console.log(`
-if (args.debug || args.verbose) console.log(`\nREQUEST for ${action}:\n` + body + '\n');
-RESPONSE for ${action}:
-`, data);
+    console.error(`\nREQUEST for ${action}:\n${body}\n`);
+    console.error(`RESPONSE for ${action}:\n${data}\n`);
     if (args.log) logMessage(`SOAP response for ${action}: ${data}`);
   } else {
     xml2js.parseString(data, { explicitArray: false }, (err, result) => {
@@ -405,7 +403,13 @@ const PTZ = {
 
   setdatetime() {
     const now = new Date();
-    const timezone = "GMT+00:00";
+    const offsetMinutes = new Date().getTimezoneOffset();
+    const sign = offsetMinutes > 0 ? '-' : '+';
+    const absMin = Math.abs(offsetMinutes);
+    const tzHours = String(Math.floor(absMin / 60)).padStart(2, '0');
+    const tzMins  = String(absMin % 60).padStart(2, '0');
+    const timezone = `GMT${sign}${tzHours}:${tzMins}`;
+    // const timezone = "GMT+00:00";
 
     const body = `<tds:SetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
       <tds:DateTimeType>Manual</tds:DateTimeType>
@@ -415,14 +419,14 @@ const PTZ = {
       </tds:TimeZone>
       <tds:UTCDateTime>
         <tt:Time>
-          <tt:Hour>${now.getHours()}</tt:Hour>
-          <tt:Minute>${now.getMinutes()}</tt:Minute>
-          <tt:Second>${now.getSeconds()}</tt:Second>
+          <tt:Hour>${now.getUTCHours()}</tt:Hour>
+          <tt:Minute>${now.getUTCMinutes()}</tt:Minute>
+          <tt:Second>${now.getUTCSeconds()}</tt:Second>
         </tt:Time>
         <tt:Date>
-          <tt:Year>${now.getFullYear()}</tt:Year>
-          <tt:Month>${now.getMonth() + 1}</tt:Month>
-          <tt:Day>${now.getDate()}</tt:Day>
+          <tt:Year>${now.getUTCFullYear()}</tt:Year>
+          <tt:Month>${now.getUTCMonth() + 1}</tt:Month>
+          <tt:Day>${now.getUTCDate()}</tt:Day>
         </tt:Date>
       </tds:UTCDateTime>
     </tds:SetSystemDateAndTime>`;
