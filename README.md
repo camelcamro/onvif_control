@@ -107,6 +107,54 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--pass`   |       | Password                                         | 
 | `--action` |       | Action to perform (`move`, `zoom`, `goto`, etc.) |
 
+## 🔧 Supported Actions
+
+Below is the complete list of `--action` values supported by `onvif_control.js`:
+
+| Action                   | Description                            |
+|---------------------------|----------------------------------------|
+| `add_user`               | Add ONVIF user |
+| `configoptions`               | Get configuration options |
+| `configurations`               | Get PTZ configurations |
+| `delete_user`               | Delete ONVIF user |
+| `enable_dhcp`               | Enable DHCP on network interface |
+| `factoryreset`               | Factory reset the device |
+| `get_capabilities`               | Get ONVIF capabilities |
+| `get_configurations`               | List media/PTZ configurations |
+| `get_device_information`               | Get model, firmware version, serial |
+| `get_dns`               | Retrieve DNS configuration |
+| `get_event_properties`               | Get ONVIF event capabilities |
+| `get_motion_detection`               | Read motion detection settings |
+| `get_network_interfaces`               | Get interface info: MAC, IP, DHCP |
+| `get_nodes`               | List PTZ nodes |
+| `get_presets`               | Get PTZ preset positions |
+| `get_profiles`               | List video/audio profiles |
+| `get_snapshot_uri`               | Get JPEG snapshot URL |
+| `get_static_ip`               | Get static IP settings |
+| `get_stream_uri`               | Get RTSP stream URL |
+| `get_system_date_and_time`               | Read current device time |
+| `get_system_info`               | Get system info (model, vendor) |
+| `get_system_logs`               | Get log entries (system or access) |
+| `get_users`               | List ONVIF users |
+| `gethostname`               | Get device hostname |
+| `goto`               | Go to PTZ preset |
+| `move`               | Relative PTZ move |
+| `preset`               | Go to preset position |
+| `presets`               | Alias for get_presets |
+| `reboot`               | Reboot the camera |
+| `removepreset`               | Delete PTZ preset |
+| `reset_password`               | Reset ONVIF password |
+| `set_dns`               | Set DNS configuration |
+| `set_motion_detection`               | Enable/disable motion detection |
+| `set_ntp`               | Set NTP server |
+| `set_static_ip`               | Assign static IP |
+| `set_video_encoder_configuration`               | Change video settings |
+| `setdatetime`               | Set local time and timezone dynamically |
+| `sethostname`               | Set device hostname |
+| `status`               | Get PTZ status |
+| `subscribe_events`               | Subscribe to ONVIF events |
+| `zoom`               | Zoom in/out (relative or absolute) |
+
 ### Optional Parameters
 | Option                     | Alias | Description                                                      |
 |----------------------------|-------|------------------------------------------------------------------|
@@ -145,42 +193,6 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--help`                   | `-h`  | Show usage                                                       |
 | `--version`                |       | Show version info                                                |
 ---
-
-## 🔧 Supported Actions
-
-Below is the list of supported `--action` values:
-
-| Action                  | Description                              |
-|--------------------------|------------------------------------------|
-| `get_device_information`              | Get model, firmware version, serial number |
-| `get_profiles`              | List all available media profiles |
-| `get_stream_uri`              | Fetch RTSP stream URL for default profile |
-| `get_snapshot_uri`              | Fetch still image snapshot URI |
-| `get_video_encoder_configuration`              | Get current video encoding settings |
-| `set_video_encoder_configuration`              | Change resolution, codec, etc. |
-| `get_system_date_and_time`              | Retrieve current time from camera |
-| `setdatetime`              | Set current local time and timezone dynamically |
-| `get_capabilities`              | List all supported ONVIF modules |
-| `get_system_info`              | Get system info (model, serial, firmware) |
-| `get_network_interfaces`              | Get IP, MAC, and other interface data |
-| `set_network_interfaces`              | Change IP/DHCP settings |
-| `get_users`              | List ONVIF users |
-| `add_user`              | Add ONVIF user |
-| `delete_user`              | Delete ONVIF user |
-| `set_ntp`              | Set NTP server |
-| `get_dns`              | Read DNS configuration |
-| `set_dns`              | Set DNS configuration |
-| `get_event_properties`              | Query supported ONVIF event types |
-| `get_motion_detection`              | Read motion detection configuration |
-| `set_motion_detection`              | Enable or disable motion detection |
-| `subscribe_events`              | Start ONVIF event subscription stream |
-| `gethostname`              | Get hostname |
-| `sethostname`              | Set hostname |
-| `set_static_ip`              | Assign static IP |
-| `enable_dhcp`              | Enable DHCP |
-| `reset_password`              | Reset ONVIF password |
-| `reboot`              | Reboot the camera |
-| `factoryreset`              | Reset camera to factory defaults |
 
 ## 📚 Examples
 
@@ -566,5 +578,3 @@ MIT or similar – free to use, modify, distribute.
 
 Happy scripting 🎉  
 This script was built for developers, integrators, and automation engineers using open, raw SOAP calls – full control, no dependencies!
----
-
