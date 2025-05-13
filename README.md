@@ -1,8 +1,8 @@
 
 # ONVIF Control Script
 
-**Version:** 1.1.0 (Full Extended)  
-**Build Date:** 2025-05-05 
+**Version:** 1.1.1 (Full Extended)  
+**Build Date:** 2025-05-12 
 **Author:** camel (camelcamro)
 
 ---
@@ -145,6 +145,42 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--help`                   | `-h`  | Show usage                                                       |
 | `--version`                |       | Show version info                                                |
 ---
+
+## 🔧 Supported Actions
+
+Below is the list of supported `--action` values:
+
+| Action                  | Description                              |
+|--------------------------|------------------------------------------|
+| `get_device_information`              | Get model, firmware version, serial number |
+| `get_profiles`              | List all available media profiles |
+| `get_stream_uri`              | Fetch RTSP stream URL for default profile |
+| `get_snapshot_uri`              | Fetch still image snapshot URI |
+| `get_video_encoder_configuration`              | Get current video encoding settings |
+| `set_video_encoder_configuration`              | Change resolution, codec, etc. |
+| `get_system_date_and_time`              | Retrieve current time from camera |
+| `setdatetime`              | Set current local time and timezone dynamically |
+| `get_capabilities`              | List all supported ONVIF modules |
+| `get_system_info`              | Get system info (model, serial, firmware) |
+| `get_network_interfaces`              | Get IP, MAC, and other interface data |
+| `set_network_interfaces`              | Change IP/DHCP settings |
+| `get_users`              | List ONVIF users |
+| `add_user`              | Add ONVIF user |
+| `delete_user`              | Delete ONVIF user |
+| `set_ntp`              | Set NTP server |
+| `get_dns`              | Read DNS configuration |
+| `set_dns`              | Set DNS configuration |
+| `get_event_properties`              | Query supported ONVIF event types |
+| `get_motion_detection`              | Read motion detection configuration |
+| `set_motion_detection`              | Enable or disable motion detection |
+| `subscribe_events`              | Start ONVIF event subscription stream |
+| `gethostname`              | Get hostname |
+| `sethostname`              | Set hostname |
+| `set_static_ip`              | Assign static IP |
+| `enable_dhcp`              | Enable DHCP |
+| `reset_password`              | Reset ONVIF password |
+| `reboot`              | Reboot the camera |
+| `factoryreset`              | Reset camera to factory defaults |
 
 ## 📚 Examples
 
@@ -323,6 +359,152 @@ node onvif_control.js --action=set_dns
 ```bash
 node onvif_control.js --action=subscribe_events
 ```
+## 🔍 Example Calls for Each Action
+
+### get_device_information
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_device_information
+```
+
+### get_profiles
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_profiles
+```
+
+### get_stream_uri
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_stream_uri
+```
+
+### get_snapshot_uri
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_snapshot_uri
+```
+
+### get_video_encoder_configuration
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_video_encoder_configuration
+```
+
+### set_video_encoder_configuration
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_video_encoder_configuration
+```
+
+### get_system_date_and_time
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_date_and_time
+```
+
+### setdatetime
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=setdatetime
+```
+
+### get_capabilities
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_capabilities
+```
+
+### get_system_info
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_info
+```
+
+### get_network_interfaces
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_network_interfaces
+```
+
+### set_network_interfaces
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_network_interfaces
+```
+
+### get_users
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_users
+```
+
+### add_user
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=add_user
+```
+
+### delete_user
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=delete_user
+```
+
+### set_ntp
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_ntp
+```
+
+### get_dns
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_dns
+```
+
+### set_dns
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_dns
+```
+
+### get_event_properties
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_event_properties
+```
+
+### get_motion_detection
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_motion_detection
+```
+
+### set_motion_detection
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_motion_detection
+```
+
+### subscribe_events
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=subscribe_events
+```
+
+### gethostname
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=gethostname
+```
+
+### sethostname
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=sethostname
+```
+
+### set_static_ip
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_static_ip
+```
+
+### enable_dhcp
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=enable_dhcp
+```
+
+### reset_password
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reset_password
+```
+
+### reboot
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reboot
+```
+
+### factoryreset
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=factoryreset
+```
 
 ## 🧠 Expert & Troubleshooting
 
@@ -384,3 +566,5 @@ MIT or similar – free to use, modify, distribute.
 
 Happy scripting 🎉  
 This script was built for developers, integrators, and automation engineers using open, raw SOAP calls – full control, no dependencies!
+---
+
