@@ -245,6 +245,7 @@ function realSendSoap(action, body, cb) {
     res.on('end', () => {
   if (args.verbose || args.debug) {
     console.log(`
+if (args.debug || args.verbose) console.log(`\nREQUEST for ${action}:\n` + body + '\n');
 RESPONSE for ${action}:
 `, data);
     if (args.log) logMessage(`SOAP response for ${action}: ${data}`);
