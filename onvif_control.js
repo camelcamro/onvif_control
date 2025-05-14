@@ -76,7 +76,7 @@ function showHelp() {
   --presetname=<PRESETNAME>, -n Preset name (for setpreset eg: Preset001)
   --time, -t                    Duration (in seconds) for move/zoom
   --wakeup                      Send full wakeup before action cmd (GetNodes, GetConfigurations, GetPresets)
-  --wakeup_simple               Send simple wakeup before action cmd (GetDeviceInformation only)
+  --wakeup_simple               Send simple wakeup before action cmd (GetPresets only)
   --debug, -d                   Output args in JSON
   --verbose, -v                 Show verbose info
   --log, -l                     Log to system log
@@ -180,12 +180,12 @@ function buildWSSecurity(username, password) {
 }
 
 function wakeupSimple(cb) {
-  if (args.verbose) console.log('[WAKEUP_SIMPLE] Sending GetDeviceInformation...');
-  const body = `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-  realSendSoap('GetDeviceInformation', body, cb);
+  if (args.verbose) console.log('[WAKEUP_SIMPLE] Sending GetPresets...');
+  const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
+  realSendSoap('GetPresets', body, cb);
 }
 
-function wakeupSequence(cb) {
+async function wakeupSequence(cb) {
   if (args.verbose) console.log('[WAKEUP] Sending Wakeup Sequence (GetNodes, GetConfigurations, GetPresets)...');
   const steps = [
     () => realSendSoap('GetNodes', '<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', steps[1]),
@@ -267,6 +267,7 @@ function realSendSoap(action, body, cb) {
       }
     });
   }
+  await sleep(500);
   cb && cb();
 });
   });
