@@ -13,12 +13,15 @@ const args = require('minimist')(process.argv.slice(2), {
   }
 });
 
-const VERSION = '1.1.2';
+const VERSION = '1.1.3';
 const BUILD_DATE = '2025-05-13';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Sleep afer wakeup call for SOAP requests
+const WAKEUP_SLEEP_MS = 1000;
 // Timeout in milliseconds for SOAP requests
 const SOCKET_TIMEOUT_MS = 5000;
 
@@ -179,20 +182,32 @@ function buildWSSecurity(username, password) {
   };
 }
 
-function wakeupSimple(cb) {
+async function wakeupSimple(cb) {
   if (args.verbose) console.log('[WAKEUP_SIMPLE] Sending GetPresets...');
   const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
-  realSendSoap('GetPresets', body, cb);
+  realSendSoap('GetPresets', body, async () => {
+    await sleep(WAKEUP_SLEEP_MS);
+    cb && cb();
+  });
 }
 
-async function wakeupSequence(cb) {
-  if (args.verbose) console.log('[WAKEUP] Sending Wakeup Sequence (GetNodes, GetConfigurations, GetPresets)...');
+function wakeupSequence(cb) {
+  if (args.verbose) console.log('[WAKEUP] Sending Wake-up Sequence (GetNodes, GetConfigurations, GetPresets)…');
   const steps = [
-    () => realSendSoap('GetNodes', '<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', steps[1]),
-    () => realSendSoap('GetConfigurations', '<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', steps[2]),
-    () => realSendSoap('GetPresets', `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`, cb)
+    () => realSendSoap('GetNodes', '<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', async () => {
+      await sleep(WAKEUP_SLEEP_MS);
+      steps[1]();
+    }),
+    () => realSendSoap('GetConfigurations', '<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', async () => {
+      await sleep(WAKEUP_SLEEP_MS);
+      steps[2]();
+    }),
+    () => realSendSoap('GetPresets', `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`, async () => {
+      await sleep(WAKEUP_SLEEP_MS);   // ⏳ dritte Pause
+      cb && cb();
+    })
   ];
-  steps[0]();
+  steps[0]();   // Sequenz starten
 }
 
 function sendSoap(action, body, cb) {
@@ -212,6 +227,7 @@ function sendSoap(action, body, cb) {
 }
 
 function realSendSoap(action, body, cb) {
+  const curAction = action;
   const ws = buildWSSecurity(args.user, args.pass);
   const soapEnvelope = `
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
@@ -267,7 +283,18 @@ function realSendSoap(action, body, cb) {
       }
     });
   }
-  await sleep(500);
+  if (/NoToken|preset token does not exist/i.test(data)) {
+   if (curAction.startsWith('Goto') || curAction.toLowerCase().includes('goto')) {
+      console.log('[AUTO] Preset token not found  requesting GetPresets list');
+       const failedCall = () => realSendSoap(curAction, body, cb, true);
+      const bodyPresets = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
+      return realSendSoap('GetPresets', bodyPresets, async () => {
+        await sleep(WAKEUP_SLEEP_MS);
+        console.log('[AUTO] Retrying original goto command');
+        failedCall();
+      });
+    }
+  }
   cb && cb();
 });
   });
