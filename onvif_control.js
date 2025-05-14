@@ -13,8 +13,8 @@ const args = require('minimist')(process.argv.slice(2), {
   }
 });
 
-const VERSION = '1.1.1';
-const BUILD_DATE = '2025-05-12';
+const VERSION = '1.1.2';
+const BUILD_DATE = '2025-05-13';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
