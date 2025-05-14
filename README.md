@@ -184,7 +184,7 @@ Below is the complete list of `--action` values supported by `onvif_control.js`:
 | `--presetname=<PRESETNAME>`| `-n`  | Preset name (used with `setpreset`)                              |
 | `--time`                   | `-t`  | Duration in seconds (for movement/zoom)                          |
 | `--wakeup`                 |       | Send full wakeup before (GetNodes, GetConfigurations, GetPresets)|
-| `--wakeup_simple`          |       | Send simple wakeup before (GetDeviceInformation only)            |
+| `--wakeup_simple`          |       | Send simple wakeup before (GetPresets only)                      |
 | `--verbose`                | `-v`  | Enable verbose output                                            |
 | `--debug`                  | `-d`  | Show debug JSON                                                  |
 | `--dry-run`                | `-r`  | Show parameters but do not send SOAP                             |
