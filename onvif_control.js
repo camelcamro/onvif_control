@@ -12,8 +12,8 @@ const args = require('minimist')(process.argv.slice(2), {
   // No automatic Number Casting for Token & Presets
   string: ['token', 'k', 'preset', 'e', 'presetname', 'n']
 });
-const VERSION = '1.1.5';
-const BUILD_DATE = '2025-07-03';
+const VERSION = '1.1.6';
+const BUILD_DATE = '2025-07-04';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
