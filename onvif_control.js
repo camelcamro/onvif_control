@@ -77,7 +77,7 @@ function showHelp() {
   --pan, -p                     Pan value
   --tilt, -i                    Tilt value
   --zoom, -z                    Zoom value
-  --preset=<PRESETNAME>, -e     Preset token (for goto/remove eg: Preset001)
+  --preset=<PRESETNAME>, -e     Preset name (for goto/remove eg: Preset001)
   --presetname=<PRESETNAME>, -n Preset name (for setpreset eg: Preset001)
   --time, -t                    Duration (in seconds) for move/zoom
   --wakeup                      Send full wakeup before action cmd (GetNodes, GetConfigurations, GetPresets)
