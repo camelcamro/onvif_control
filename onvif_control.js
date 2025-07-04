@@ -9,13 +9,12 @@ const args = require('minimist')(process.argv.slice(2), {
   alias: {
     v: 'verbose', d: 'debug', l: 'log', m: 'mute', h: 'help', t: 'time',
     z: 'zoom', p: 'pan', u: 'user', i: 'ip', k: 'token', e: 'preset',
-    n: 'presetname', r: 'dry-run'
-  },
-  // 🚫  No automatic Number Casting for Token & Presets
+    n: 'presetname', r: 'dry-run', y: 'tilt'},
+  // No automatic Number Casting for Token & Presets
   string: ['token', 'k', 'preset', 'e', 'presetname', 'n']
 });
 
-const VERSION = '1.1.4';
+const VERSION = '1.1.5';
 const BUILD_DATE = '2025-07-03';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
@@ -32,81 +31,97 @@ function showHelp() {
   ONVIF Control Script - Version ${VERSION} (${BUILD_DATE})
   
   Usage:
-  node onvif-control.js --action=<action> --ip=IP --port=PORT --user=USER --pass=PASS [options]
+  node onvif-control.js --ip=IP --port=PORT --user=USER --pass=PASS --action=<action> [options]
   
   Mandatory Parameters:
   --ip, -i         Camera IP
   --port           Camera ONVIF port (e.g. 8080)
   --user, -u       Username
   --pass           Password
-  --action         One of: move, zoom, stop, goto, setpreset, removepreset, presets, status, absolutemove, relativemove, configoptions
-            additional action commands:
-              reboot
+  --action         One of: (see list below)
+              absolutemove
+              add_user
+              configoptions
+              configurations
+              delete_user
+              enable_dhcp
               factoryreset
-              setdatetime
-              get_snapshot_uri
-              get_stream_uri
+              get_capabilities
+              get_configurations
+              get_device_information
+              get_dns
+              get_event_properties
+              get_motion_detection
+              get_network_interfaces
+              get_nodes
+              get_presets
               get_profiles
-              get_video_encoder_configuration
-              set_video_encoder_configuration
+              get_snapshot_uri
+              get_static_ip
+              get_stream_uri
               get_system_date_and_time
               get_system_info
-              get_capabilities
-              get_network_interfaces
-              set_network_interfaces
-              get_users
-              add_user
-              delete_user
-              set_ntp
               get_system_logs
-              get_dns
-              set_dns
-              get_motion_detection
-              set_motion_detection
-              get_event_properties
-              subscribe_events
+              get_users
+              get_video_encoder_configuration
               gethostname
-              sethostname
-              set_static_ip
-              enable_dhcp
+              goto
+              move
+              preset
+              presets
+              reboot
+              relativemove
+              removepreset
               reset_password
-              get_device_information
+              set_dns
+              set_motion_detection
+              set_network_interfaces
+              set_ntp
+              set_static_ip
+              set_video_encoder_configuration
+              setdatetime
+              sethostname
+              setpreset
+              status
+              stop
+              subscribe_events
+              zoom
   
-  Optional:
-  --token, -k                   ProfileToken (default: MainStreamProfileToken)
-  --pan, -p                     Pan value
-  --tilt, -i                    Tilt value
-  --zoom, -z                    Zoom value
-  --preset=<PRESETNAME>, -e     Preset name (for goto/remove eg: Preset001)
-  --presetname=<PRESETNAME>, -n Preset name (for setpreset eg: Preset001)
-  --time, -t                    Duration (in seconds) for move/zoom
-  --wakeup                      Send full wakeup before action cmd (GetNodes, GetConfigurations, GetPresets)
-  --wakeup_simple               Send simple wakeup before action cmd (GetPresets only)
-  --debug, -d                   Output args in JSON
-  --verbose, -v                 Show verbose info
-  --log, -l                     Log to system log
-  --dry-run, -r                 Simulate request
-  --mute, -m                    Only return error code
-  --help, -h                    Show help
-  --version                     Show version
-  --hostname                    New hostname (used with --action=sethostname)
-  --ip                          IP address (used with --action=set_network_interfaces)
-  --netmask                     Netmask (used with --action=set_network_interfaces)
-  --gateway                     Gateway IP (used with --action=set_network_interfaces)
-  --dhcp                        Enable DHCP (1 or 0)
-  --dns1, --dns2                DNS servers (used with --action=set_dns)
-  --ntp_server                  NTP server IP (used with --action=set_ntp)
-  --datetime                    Manual UTC datetime (optional for setdatetime)
-  --username                    Username (used with --action=reset_password)
-  --resolution                  Resolution (e.g. 1920x1080) for video encoder
+  Optional Options:
   --bitrate                     Bitrate in kbps for encoder
   --codec                       Codec type (e.g. H264)
-  --eventtype                   Event filter type (optional for --action=subscribe_events)
+  --datetime                    Manual UTC datetime (optional for setdatetime)
+  --debug, -d                   Output args in JSON
+  --del_username                Username to delete (used with --action=delete_user)
+  --dhcp                        Enable DHCP (1 or 0)
+  --dns1, --dns2                DNS servers (used with --action=set_dns)
+  --dry-run, -r                 Simulate request
   --enable                      Enable flag (1 or 0) for motion detection 
-  --new_username                Username to create (used with --action=add_user)
+  --eventtype                   Event filter type (optional for --action=subscribe_events)
+  --gateway                     Gateway IP (used with --action=set_network_interfaces)
+  --help, -h                    Show help
+  --hostname                    New hostname (used with --action=sethostname)
+  --ip                          IP address (used with --action=set_network_interfaces)
+  --log, -l                     Log to system log
+  --mute, -m                    Only return error code
+  --netmask                     Netmask (used with --action=set_network_interfaces)
   --new_password                Password for new user
   --new_userlevel               Access level (Administrator, User, Operator)
-  --del_username                Username to delete (used with --action=delete_user)
+  --new_username                Username to create (used with --action=add_user)
+  --ntp_server                  NTP server IP (used with --action=set_ntp)
+  --pan, -p                     Pan value
+  --preset=<PRESETNAME>, -e     Preset name (for goto/remove eg: Preset001)
+  --presetname=<PRESETNAME>, -n Preset name (for setpreset eg: Preset001)
+  --resolution                  Resolution (e.g. 1920x1080) for video encoder
+  --tilt, -y                    Tilt value
+  --time, -t                    Duration (in seconds) for move/zoom
+  --token, -k                   ProfileToken (default: MainStreamProfileToken)
+  --username                    Username (used with --action=reset_password)
+  --verbose, -v                 Show verbose info
+  --version                     Show version
+  --wakeup                      Send full wakeup before action cmd (GetNodes, GetConfigurations, GetPresets)
+  --wakeup_simple               Send simple wakeup before action cmd (GetPresets only)
+  --zoom, -z                    Zoom value
   
   `);
   process.exit(0);
@@ -507,10 +522,6 @@ const PTZ = {
     const body = `<tds:GetUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
     sendSoap('GetUsers', body);
   },
-  add_user() {
-    const body = `<tds:CreateUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('CreateUsers', body);
-  },
   delete_user() {
     const body = `<tds:DeleteUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
     sendSoap('DeleteUsers', body);
@@ -683,6 +694,36 @@ const PTZ = {
       <tmd:Enabled>${enable_motion}</tmd:Enabled>
     </tmd:SetMotionDetection>`;
     sendSoap('SetMotionDetection', body);
+  },
+// === Added alias/wrapper actions for README parity ===
+  configurations() {
+    // Alias for GetConfigurations (media/PTZ)
+    const body = `<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
+    sendSoap('GetConfigurations', body);
+  },
+
+  get_configurations() {
+    this.configurations();
+  },
+
+  get_nodes() {
+    const body = `<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
+    sendSoap('GetNodes', body);
+  },
+
+  get_presets() {
+    // Alias to existing 'presets' action
+    this.presets();
+  },
+
+  preset() {
+    // Alias to existing 'goto' action
+    this.goto();
+  },
+
+  get_static_ip() {
+    // ONVIF does not have dedicated 'GetStaticIP', use GetNetworkInterfaces
+    this.get_network_interfaces();
   },
 };
 
