@@ -264,23 +264,7 @@ function realSendSoap(action, body, cb) {
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
   ${headerXml}
   <s:Body>${body}</s:Body>
-</s:Envelope>`.trim();
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
-  <s:Header>
-    <Security s:mustUnderstand="1"
-      xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
-      <UsernameToken>
-        <Username>${args.user}</Username>
-        <Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">${ws.PasswordDigest}</Password>
-        <Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">${ws.Nonce}</Nonce>
-        <Created xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">${ws.Created}</Created>
-      </UsernameToken>
-    </Security>
-  </s:Header>
-  <s:Body>${body}</s:Body>
-</s:Envelope>`.trim();
-
-  const req = http.request({
+</s:Envelope>`.trim();const req = http.request({
     host: args.ip,
     port: args.port,
     method: 'POST',
