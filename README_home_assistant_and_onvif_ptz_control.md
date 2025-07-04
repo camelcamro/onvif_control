@@ -52,6 +52,44 @@ shell_command:
     {% if verbose is defined %} --verbose={{ verbose }}{% endif %}
     {% if mute is defined %} --mute={{ mute }}{% endif %}"
 ```
+#EDIT: 202507-03
+#mine .. for the new version with more (not all) options:
+
+  onvif_control: >
+    ssh -o "StrictHostKeyChecking=no" root@localhost
+    "/usr/local/nodejs/bin/node /home/onvif/onvif_control.js --log=1
+    --ip={{ ip }} --port={{ port }} --user={{ user }} --pass={{ password }}
+    --action={{ action }}
+    {% if wakeup is defined %} --wakeup={{ wakeup }}{% endif %}
+    {% if wakeup_simple is defined %} --wakeup_simple={{ wakeup_simple }}{% endif %}
+    {% if pan is defined %} --pan={{ pan }}{% endif %}
+    {% if tilt is defined %} --tilt={{ tilt }}{% endif %}
+    {% if zoom is defined %} --zoom={{ zoom }}{% endif %}
+    {% if time is defined %} --time={{ time }}{% endif %}
+    {% if preset is defined %} --preset={{ preset }}{% endif %}
+    {% if presetname is defined %} --presetname={{ presetname }}{% endif %}
+    {% if token is defined %} --token={{ token }}{% endif %}
+    {% if new_username is defined %} --new_username={{ new_username }}{% endif %}
+    {% if new_password is defined %} --new_password={{ new_password }}{% endif %}
+    {% if new_userlevel is defined %} --new_userlevel={{ new_userlevel }}{% endif %}
+    {% if del_username is defined %} --del_username={{ del_username }}{% endif %}
+    {% if hostname is defined %} --hostname={{ hostname }}{% endif %}
+    {% if netmask is defined %} --netmask={{ netmask }}{% endif %}
+    {% if gateway is defined %} --gateway={{ gateway }}{% endif %}
+    {% if dhcp is defined %} --dhcp={{ dhcp }}{% endif %}
+    {% if dns1 is defined %} --dns1={{ dns1 }}{% endif %}
+    {% if dns2 is defined %} --dns2={{ dns2 }}{% endif %}
+    {% if ntp_server is defined %} --ntp_server={{ ntp_server }}{% endif %}
+    {% if datetime is defined %} --datetime={{ datetime }}{% endif %}
+    {% if username is defined %} --username={{ username }}{% endif %}
+    {% if resolution is defined %} --resolution={{ resolution }}{% endif %}
+    {% if bitrate is defined %} --bitrate={{ bitrate }}{% endif %}
+    {% if codec is defined %} --codec={{ codec }}{% endif %}
+    {% if eventtype is defined %} --eventtype={{ eventtype }}{% endif %}
+    {% if enable is defined %} --enable={{ enable }}{% endif %}
+    {% if debug is defined %} --debug={{ debug }}{% endif %}
+    {% if verbose is defined %} --verbose={{ verbose }}{% endif %}
+    {% if mute is defined %} --mute={{ mute }}{% endif %}"
 
 ---
 
