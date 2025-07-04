@@ -1,5 +1,6 @@
 // onvif_control.js
 // ONVIF Control Script - Full SOAP Implementation
+
 const crypto = require('crypto');
 const http = require('http');
 const xml2js = require("xml2js");
@@ -12,19 +13,23 @@ const args = require('minimist')(process.argv.slice(2), {
   // No automatic Number Casting for Token & Presets
   string: ['token', 'k', 'preset', 'e', 'presetname', 'n']
 });
+
 const VERSION = '1.1.6';
 const BUILD_DATE = '2025-07-04';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Sleep afer wakeup call for SOAP requests
 const WAKEUP_SLEEP_MS = 1000;
 // Timeout in milliseconds for SOAP requests
 const SOCKET_TIMEOUT_MS = 5000;
+
 function showHelp() {
   console.log(`
   ONVIF Control Script - Version ${VERSION} (${BUILD_DATE})
+  
   Usage:
   node onvif-control.js --ip=IP --port=PORT --action=<action> [options]
   Required Parameters (minimum):
@@ -115,14 +120,17 @@ function showHelp() {
   --wakeup                      Send full wakeup before action cmd (GetNodes, GetConfigurations, GetPresets)
   --wakeup_simple               Send simple wakeup before action cmd (GetPresets only)
   --zoom, -z                    Zoom value
+  
   `);
   process.exit(0);
 }
+
 if (args.help) showHelp();
 if (args.version) {
   console.log(`ONVIF Control Script\nVersion: ${VERSION}\nBuild Date: ${BUILD_DATE}`);
   process.exit(0);
 }
+
 function errorOut(msg, code = 1) {
   if (!args.mute) console.error(`ERROR: ${msg}\nUse --help to view usage.`);
   process.exit(code);
@@ -130,20 +138,25 @@ function errorOut(msg, code = 1) {
 ['ip', 'port', 'action'].forEach(param => {
   if (!args[param]) errorOut(`Missing required parameter: --${param}`);
 });
+
 function mask(obj) {
   const clone = { ...obj };
   if (clone.pass) clone.pass = '***';
   return clone;
 }
+
 const duration = args.time ? parseFloat(String(args.time).replace(',', '.')) * 1000 : 1000;
 if (args.time && (isNaN(duration) || duration <= 0)) errorOut('--time must be a positive number');
+
 function logMessage(msg) {
   if (args.log) execSync(`logger -t onvif "${msg}"`);
 }
+
 logMessage(`Called script onvif_control.js with ${process.argv.slice(2).join(' ')}`);
 if (args.verbose) console.log(`[INFO] Called with:`, mask(args));
 if (args.debug) console.log(JSON.stringify(mask(args), null, 2));
 if (args['dry-run']) process.exit(0);
+
 const hostname = args.hostname;
 const ip = args.ip;
 const netmask = args.netmask;
@@ -160,10 +173,14 @@ const bitrate = args.bitrate;
 const codec = args.codec;
 const eventtype = args.eventtype;
 const enable_motion = args.enable;
+
+
 const newUser = args.new_username;
 const newPass = args.new_password;
 const newLevel = args.new_userlevel;
 const delUser = args.del_username;
+
+
 // === Helper: Build WS-Security Header ===
 function buildWSSecurity(username, password) {
   const nonce = crypto.randomBytes(16);
@@ -178,6 +195,7 @@ function buildWSSecurity(username, password) {
     Created: created
   };
 }
+
 async function wakeupSimple(cb) {
   if (args.verbose) console.log('[WAKEUP_SIMPLE] Sending GetPresets...');
   const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
@@ -186,6 +204,7 @@ async function wakeupSimple(cb) {
     cb && cb();
   });
 }
+
 function wakeupSequence(cb) {
   if (args.verbose) console.log('[WAKEUP] Sending Wake-up Sequence (GetNodes, GetConfigurations, GetPresets)…');
   const steps = [
@@ -204,10 +223,12 @@ function wakeupSequence(cb) {
   ];
   steps[0]();   // Sequenz starten
 }
+
 function sendSoap(action, body, cb) {
   const wakeupTasks = [];
   if (WAKEUP) wakeupTasks.push(cb => wakeupSequence(cb));
   if (WAKEUP_SIMPLE) wakeupTasks.push(cb => wakeupSimple(cb));
+
   let index = 0;
   function next() {
     if (index < wakeupTasks.length) {
@@ -218,6 +239,7 @@ function sendSoap(action, body, cb) {
   }
   next();
 }
+
 function realSendSoap(action, body, cb) {
   const curAction = action;
   const needAuth = args.user && args.pass;
@@ -257,6 +279,7 @@ function realSendSoap(action, body, cb) {
   </s:Header>
   <s:Body>${body}</s:Body>
 </s:Envelope>`.trim();
+
   const req = http.request({
     host: args.ip,
     port: args.port,
@@ -310,17 +333,21 @@ function realSendSoap(action, body, cb) {
   cb && cb();
 });
   });
+
   req.on('timeout', () => {
     req.destroy();
     errorOut(`Timeout on ${action}`);
   });
+
   req.on('error', err => {
     errorOut(`HTTP error on ${action}: ${err.message}`);
   });
+
   if (args.log) logMessage(`SOAP request for ${action}: ${body.replace(/[\n\r]+/g, '')}`);
   req.write(soapEnvelope);
   req.end();
 }
+
 // === ACTIONS ===
 const PTZ = {
   move() {
@@ -335,6 +362,7 @@ const PTZ = {
       setTimeout(() => PTZ.stop(true, false), duration);
     });
   },
+
   zoom() {
     if (!('zoom' in args)) errorOut('--zoom is required for zoom');
     const body = `<tptz:ContinuousMove xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
@@ -347,6 +375,7 @@ const PTZ = {
       setTimeout(() => PTZ.stop(false, true), duration);
     });
   },
+
   stop(pan = true, zoom = true) {
     const body = `<tptz:Stop xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
@@ -354,6 +383,7 @@ const PTZ = {
     </tptz:Stop>`;
     sendSoap('Stop', body);
   },
+
   goto() {
     if (!args.preset) errorOut('--preset is required for goto');
     const body = `<tptz:GotoPreset xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
@@ -362,6 +392,7 @@ const PTZ = {
     </tptz:GotoPreset>`;
     sendSoap('GotoPreset', body);
   },
+
   setpreset() {
     if (!args.presetname) errorOut('--presetname is required for setpreset');
     const body = `<tptz:SetPreset xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
@@ -370,6 +401,7 @@ const PTZ = {
     </tptz:SetPreset>`;
     sendSoap('SetPreset', body);
   },
+
   removepreset() {
     if (!args.preset) errorOut('--preset is required for removepreset');
     const body = `<tptz:RemovePreset xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
@@ -378,18 +410,21 @@ const PTZ = {
     </tptz:RemovePreset>`;
     sendSoap('RemovePreset', body);
   },
+
   presets() {
     const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GetPresets>`;
     sendSoap('GetPresets', body);
   },
+
   status() {
     const body = `<tptz:GetStatus xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GetStatus>`;
     sendSoap('GetStatus', body);
   },
+
   absolutemove() {
     if (!('pan' in args) || !('tilt' in args)) errorOut('--pan and --tilt required');
     const body = `<tptz:AbsoluteMove xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
@@ -401,6 +436,7 @@ const PTZ = {
     </tptz:AbsoluteMove>`;
     sendSoap('AbsoluteMove', body);
   },
+
   relativemove() {
     if (!('pan' in args) || !('tilt' in args)) errorOut('--pan and --tilt required');
     const body = `<tptz:RelativeMove xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
@@ -412,6 +448,7 @@ const PTZ = {
     </tptz:RelativeMove>`;
     sendSoap('RelativeMove', body);
   },
+
   configoptions() {
     const body = `<tptz:GetConfigurationOptions xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ConfigurationToken>${PROFILE_TOKEN}</ConfigurationToken>
@@ -426,6 +463,7 @@ const PTZ = {
     const body = `<tds:FactoryReset xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
     sendSoap('FactoryReset', body);
   },
+
   setdatetime() {
     const now = new Date();
     const offsetMinutes = new Date().getTimezoneOffset();
@@ -435,6 +473,7 @@ const PTZ = {
     const tzMins  = String(absMin % 60).padStart(2, '0');
     const timezone = `GMT${sign}${tzHours}:${tzMins}`;
     // const timezone = "GMT+00:00";
+
     const body = `<tds:SetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
       <tds:DateTimeType>Manual</tds:DateTimeType>
       <tds:DaylightSavings>false</tds:DaylightSavings>
@@ -454,6 +493,7 @@ const PTZ = {
         </tt:Date>
       </tds:UTCDateTime>
     </tds:SetSystemDateAndTime>`;
+
     sendSoap('SetSystemDateAndTime', body);
   },
   get_snapshot_uri() {
@@ -560,6 +600,7 @@ const PTZ = {
     const body = `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
     sendSoap('GetDeviceInformation', body);
   },
+
   add_user() {
     if (!newUser || !newPass || !newLevel) errorOut('Missing --new_username, --new_password, or --new_userlevel');
     const body = `<tds:CreateUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
@@ -571,6 +612,7 @@ const PTZ = {
     </tds:CreateUsers>`;
     sendSoap('CreateUsers', body);
   },
+
   delete_user() {
     if (!delUser) errorOut('Missing --del_username');
     const body = `<tds:DeleteUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
@@ -578,6 +620,8 @@ const PTZ = {
     </tds:DeleteUsers>`;
     sendSoap('DeleteUsers', body);
   },
+
+
   sethostname() {
     if (!hostname) errorOut('Missing --hostname');
     const body = `<tds:SetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
@@ -585,6 +629,7 @@ const PTZ = {
     </tds:SetHostname>`;
     sendSoap('SetHostname', body);
   },
+
   set_network_interfaces() {
     if (!ip || !netmask || !gateway) errorOut('Missing --ip, --netmask, or --gateway');
     const dhcpFlag = dhcp === '1' ? 'true' : 'false';
@@ -604,6 +649,7 @@ const PTZ = {
     </tds:SetNetworkInterfaces>`;
     sendSoap('SetNetworkInterfaces', body);
   },
+
   set_dns() {
     if (!dns1 && !dns2) errorOut('Missing --dns1 or --dns2');
     const dnsParts = [dns1, dns2].filter(Boolean).map(d => `<tt:Type>IPv4</tt:Type><tt:IPv4Address>${d}</tt:IPv4Address>`).join("");
@@ -613,6 +659,7 @@ const PTZ = {
     </tds:SetDNS>`;
     sendSoap('SetDNS', body);
   },
+
   set_ntp() {
     if (!ntp) errorOut('Missing --ntp_server');
     const body = `<tds:SetNTP xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
@@ -624,6 +671,7 @@ const PTZ = {
     </tds:SetNTP>`;
     sendSoap('SetNTP', body);
   },
+
   reset_password() {
     if (!username_reset || !newpass_reset) errorOut('Missing --username or --new_password');
     const body = `<tds:SetUser xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
@@ -634,6 +682,7 @@ const PTZ = {
     </tds:SetUser>`;
     sendSoap('SetUser', body);
   },
+
   set_video_encoder_configuration() {
     if (!resolution || !bitrate || !codec) errorOut('Missing --resolution, --bitrate, or --codec');
     const body = `<trt:SetVideoEncoderConfiguration xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
@@ -651,10 +700,12 @@ const PTZ = {
     </trt:SetVideoEncoderConfiguration>`;
     sendSoap('SetVideoEncoderConfiguration', body);
   },
+
   subscribe_events() {
     const body = `<tev:Subscribe xmlns:tev="http://www.onvif.org/ver10/events/wsdl"/>`;
     sendSoap('Subscribe', body);
   },
+
   set_motion_detection() {
     if (!enable_motion) errorOut('Missing --enable');
     const body = `<tmd:SetMotionDetection xmlns:tmd="http://www.onvif.org/ver10/schema">
@@ -668,26 +719,32 @@ const PTZ = {
     const body = `<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
     sendSoap('GetConfigurations', body);
   },
+
   get_configurations() {
     this.configurations();
   },
+
   get_nodes() {
     const body = `<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
     sendSoap('GetNodes', body);
   },
+
   get_presets() {
     // Alias to existing 'presets' action
     this.presets();
   },
+
   preset() {
     // Alias to existing 'goto' action
     this.goto();
   },
+
   get_static_ip() {
     // ONVIF does not have dedicated 'GetStaticIP', use GetNetworkInterfaces
     this.get_network_interfaces();
   },
 };
+
 const act = args.action.toLowerCase();
 if (!PTZ[act]) errorOut(`Unsupported action: ${act}`);
 PTZ[act]();
