@@ -1,7 +1,7 @@
 
 # ONVIF Control Script
 
-**Version:** 1.1.4 (Full Extended)  
+**Version:** 1.1.5 (Full Extended)  
 **Build Date:** 2025-07-03 
 **Author:** camel (camelcamro)
 
@@ -101,11 +101,11 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 ### Mandatory Parameters
 | Option     | Alias | Description                                      |
 |------------|-------|--------------------------------------------------|
+| `--action` |       | Action to perform (`move`, `zoom`, `goto`, etc.) |
 | `--ip`     | `-i`  | IP of camera                                     |
+| `--pass`   |       | Password                                         | 
 | `--port`   |       | Port of ONVIF service (e.g. 8080)                |
 | `--user`   | `-u`  | Username                                         |
-| `--pass`   |       | Password                                         | 
-| `--action` |       | Action to perform (`move`, `zoom`, `goto`, etc.) |
 
 ## 🔧 Supported Actions
 
@@ -113,6 +113,7 @@ Below is the complete list of `--action` values supported by `onvif_control.js`:
 
 | Action                   | Description                            |
 |---------------------------|----------------------------------------|
+| `absolutemove` | Move camera to absolute PTZ coordinates |
 | `add_user`               | Add ONVIF user |
 | `configoptions`               | Get configuration options |
 | `configurations`               | Get PTZ configurations |
@@ -136,62 +137,67 @@ Below is the complete list of `--action` values supported by `onvif_control.js`:
 | `get_system_info`               | Get system info (model, vendor) |
 | `get_system_logs`               | Get log entries (system or access) |
 | `get_users`               | List ONVIF users |
+| `get_video_encoder_configuration` | Retrieve current video encoder settings |
 | `gethostname`               | Get device hostname |
 | `goto`               | Go to PTZ preset |
 | `move`               | Relative PTZ move |
 | `preset`               | Go to preset position |
 | `presets`               | Alias for get_presets |
 | `reboot`               | Reboot the camera |
+| `relativemove` | Move camera relative to current PTZ position |
 | `removepreset`               | Delete PTZ preset |
 | `reset_password`               | Reset ONVIF password |
 | `set_dns`               | Set DNS configuration |
 | `set_motion_detection`               | Enable/disable motion detection |
+| `set_network_interfaces` | Configure detailed network interface parameters |
 | `set_ntp`               | Set NTP server |
 | `set_static_ip`               | Assign static IP |
 | `set_video_encoder_configuration`               | Change video settings |
 | `setdatetime`               | Set local time and timezone dynamically |
 | `sethostname`               | Set device hostname |
+| `setpreset` | Save current position as a PTZ preset |
 | `status`               | Get PTZ status |
+| `stop` | Stop any ongoing PTZ or zoom movement |
 | `subscribe_events`               | Subscribe to ONVIF events |
 | `zoom`               | Zoom in/out (relative or absolute) |
 
-### Optional Parameters
+### Optional Option Parameters
 | Option                     | Alias | Description                                                      |
 |----------------------------|-------|------------------------------------------------------------------|
-| `--new_username`           |       | Username to create (used with `--action=add_user`)               |
-| `--new_password`           |       | Password for new user                                            |
-| `--new_userlevel`          |       | Access level (`Administrator`, `User`, etc.)                     |
-| `--del_username`           |       | Username to delete (used with `--action=delete_user`)            |
-| `--hostname`               |       | New hostname (used with `--action=sethostname`)                  |
-| `--netmask`                |       | Netmask (used with `--action=set_network_interfaces`)            |
-| `--gateway`                |       | Gateway IP (used with `--action=set_network_interfaces`)         |
-| `--dhcp`                   |       | Enable DHCP (`1` or `0`)                                         |
-| `--dns1`, `--dns2`         |       | DNS servers (used with `--action=set_dns`)                       |
-| `--ntp_server`             |       | NTP server (used with `--action=set_ntp`)                        |
-| `--datetime`               |       | Manual time string for `setdatetime` (optional)                  |
-| `--username`               |       | Username to update (used with `--action=reset_password`)         |
-| `--resolution`             |       | e.g., `1920x1080` for encoder config                             |
 | `--bitrate`                |       | Bitrate for encoder in kbps                                      |
 | `--codec`                  |       | Video codec type (e.g., H264)                                    |
-| `--eventtype`              |       | Filter for event subscriptions (optional)                        |
-| `--enable`                 |       | Enable/Disable flags (e.g., for motion detection)                |
-|----------------------------|-------|------------------------------------------------------------------|
-| `--token`                  | `-k`  | Profile token (default: `MainStreamProfileToken`)                |
-| `--pan`                    | `-p`  | Pan direction/position (-1.0 to 1.0)                             |
-| `--tilt`                   | `-i`  | Tilt direction/position (-1.0 to 1.0)                            |
-| `--zoom`                   | `-z`  | Zoom direction/position (-1.0 to 1.0)                            |
-| `--preset=<PRESETNAME>`    | `-e`  | Preset token (used with `goto`, `removepreset`)                  |
-| `--presetname=<PRESETNAME>`| `-n`  | Preset name (used with `setpreset`)                              |
-| `--time`                   | `-t`  | Duration in seconds (for movement/zoom)                          |
-| `--wakeup`                 |       | Send full wakeup before (GetNodes, GetConfigurations, GetPresets)|
-| `--wakeup_simple`          |       | Send simple wakeup before (GetPresets only)                      |
-| `--verbose`                | `-v`  | Enable verbose output                                            |
+| `--datetime`               |       | Manual time string for `setdatetime` (optional)                  |
 | `--debug`                  | `-d`  | Show debug JSON                                                  |
+| `--del_username`           |       | Username to delete (used with `--action=delete_user`)            |
+| `--dhcp`                   |       | Enable DHCP (`1` or `0`)                                         |
+| `--dns1`, `--dns2`         |       | DNS servers (used with `--action=set_dns`)                       |
 | `--dry-run`                | `-r`  | Show parameters but do not send SOAP                             |
+| `--enable`                 |       | Enable/Disable flags (e.g., for motion detection)                |
+| `--eventtype`              |       | Filter for event subscriptions (optional)                        |
+| `--gateway`                |       | Gateway IP (used with `--action=set_network_interfaces`)         |
+| `--help`                   | `-h`  | Show usage                                                       |
+| `--hostname`               |       | New hostname (used with `--action=sethostname`)                  |
 | `--log`                    | `-l`  | Write to system log                                              |
 | `--mute`                   | `-m`  | Suppress all output except return code                           |
-| `--help`                   | `-h`  | Show usage                                                       |
+| `--netmask`                |       | Netmask (used with `--action=set_network_interfaces`)            |
+| `--new_password`           |       | Password for new user                                            |
+| `--new_userlevel`          |       | Access level (`Administrator`, `User`, etc.)                     |
+| `--new_username`           |       | Username to create (used with `--action=add_user`)               |
+| `--ntp_server`             |       | NTP server (used with `--action=set_ntp`)                        |
+| `--pan`                    | `-p`  | Pan direction/position (-1.0 to 1.0)                             |
+| `--preset=<PRESETNAME>`    | `-e`  | Preset name (used with `goto`, `removepreset`)                   |
+| `--presetname=<PRESETNAME>`| `-n`  | Preset name (used with `setpreset`)                              |
+| `--resolution`             |       | e.g., `1920x1080` for encoder config                             |
+| `--tilt`                   | `-y`  | Tilt direction/position (-1.0 to 1.0)                            |
+| `--time`                   | `-t`  | Duration in seconds (for movement/zoom)                          |
+| `--token`                  | `-k`  | Profile token (default: `MainStreamProfileToken`)                |
+| `--username`               |       | Username to update (used with `--action=reset_password`)         |
+| `--verbose`                | `-v`  | Enable verbose output                                            |
 | `--version`                |       | Show version info                                                |
+| `--wakeup_simple`          |       | Send simple wakeup before (GetPresets only)                      |
+| `--wakeup`                 |       | Send full wakeup before (GetNodes, GetConfigurations, GetPresets)|
+| `--zoom`                   | `-z`  | Zoom direction/position (-1.0 to 1.0)                            |
+|----------------------------|-------|------------------------------------------------------------------|
 ---
 
 ## 📚 Examples
