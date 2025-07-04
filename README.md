@@ -1,8 +1,8 @@
 
 # ONVIF Control Script
 
-**Version:** 1.1.5 (Full Extended)  
-**Build Date:** 2025-07-03 
+**Version:** 1.1.6 (Full Extended)  
+**Build Date:** 2025-07-04 
 **Author:** camel (camelcamro)
 
 ---
@@ -103,9 +103,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 |------------|-------|--------------------------------------------------|
 | `--action` |       | Action to perform (`move`, `zoom`, `goto`, etc.) |
 | `--ip`     | `-i`  | IP of camera                                     |
-| `--pass`   |       | Password                                         | 
 | `--port`   |       | Port of ONVIF service (e.g. 8080)                |
-| `--user`   | `-u`  | Username                                         |
 
 ## 🔧 Supported Actions
 
@@ -185,12 +183,14 @@ Below is the complete list of `--action` values supported by `onvif_control.js`:
 | `--new_username`           |       | Username to create (used with `--action=add_user`)               |
 | `--ntp_server`             |       | NTP server (used with `--action=set_ntp`)                        |
 | `--pan`                    | `-p`  | Pan direction/position (-1.0 to 1.0)                             |
+| `--pass`                   |       | Password                                                         |
 | `--preset=<PRESETNAME>`    | `-e`  | Preset name (used with `goto`, `removepreset`)                   |
 | `--presetname=<PRESETNAME>`| `-n`  | Preset name (used with `setpreset`)                              |
 | `--resolution`             |       | e.g., `1920x1080` for encoder config                             |
 | `--tilt`                   | `-y`  | Tilt direction/position (-1.0 to 1.0)                            |
 | `--time`                   | `-t`  | Duration in seconds (for movement/zoom)                          |
 | `--token`                  | `-k`  | Profile token (default: `MainStreamProfileToken`)                |
+| `--user`                   | `-u`  | Username                                                         |
 | `--username`               |       | Username to update (used with `--action=reset_password`)         |
 | `--verbose`                | `-v`  | Enable verbose output                                            |
 | `--version`                |       | Show version info                                                |
