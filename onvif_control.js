@@ -10,7 +10,9 @@ const args = require('minimist')(process.argv.slice(2), {
     v: 'verbose', d: 'debug', l: 'log', m: 'mute', h: 'help', t: 'time',
     z: 'zoom', p: 'pan', u: 'user', i: 'ip', k: 'token', e: 'preset',
     n: 'presetname', r: 'dry-run'
-  }
+  },
+  // 🚫  No automatic Number Casting for Token & Presets
+  string: ['token', 'k', 'preset', 'e', 'presetname', 'n']
 });
 
 const VERSION = '1.1.3';
