@@ -1,129 +1,150 @@
 // onvif_control.js
 // ONVIF Control Script - Full SOAP Implementation
 
+'use strict';
+
 const crypto = require('crypto');
 const http = require('http');
-const xml2js = require("xml2js");
+const https = require('https');
+const { URL } = require('url');
+const xml2js = require('xml2js');
 const { execSync } = require('child_process');
 const args = require('minimist')(process.argv.slice(2), {
   alias: {
     v: 'verbose', d: 'debug', l: 'log', m: 'mute', h: 'help', t: 'time',
     z: 'zoom', p: 'pan', u: 'user', i: 'ip', k: 'token', e: 'preset',
-    n: 'presetname', r: 'dry-run', y: 'tilt'},
+    n: 'presetname', r: 'dry-run', y: 'tilt'
+  },
   // No automatic Number Casting for Token & Presets
   string: ['token', 'k', 'preset', 'e', 'presetname', 'n']
 });
 
-const VERSION = '1.1.6';
-const BUILD_DATE = '2025-07-04';
+const VERSION = '1.1.7';
+const BUILD_DATE = '2025-08-22';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-// Sleep afer wakeup call for SOAP requests
+// Sleep after wakeup call for SOAP requests
 const WAKEUP_SLEEP_MS = 1000;
 // Timeout in milliseconds for SOAP requests
 const SOCKET_TIMEOUT_MS = 5000;
 
+// Discovered service endpoints (filled by GetServices)
+const DISCOVERY = { media1: null, media2: null, ptz: null };
+
+
 function showHelp() {
   console.log(`
   ONVIF Control Script - Version ${VERSION} (${BUILD_DATE})
-  
+
   Usage:
-  node onvif-control.js --ip=IP --port=PORT --action=<action> [options]
-  Required Parameters (minimum):
-  --ip, -i         Camera IP
-  --port           Camera ONVIF port (e.g. 8080)
-  --action         One of: (see list below)
-              absolutemove
-              add_user
-              configoptions
-              configurations
-              delete_user
-              enable_dhcp
-              factoryreset
-              get_capabilities
-              get_configurations
-              get_device_information
-              get_dns
-              get_event_properties
-              get_motion_detection
-              get_network_interfaces
-              get_nodes
-              get_presets
-              get_profiles
-              get_snapshot_uri
-              get_static_ip
-              get_stream_uri
-              get_system_date_and_time
-              get_system_info
-              get_system_logs
-              get_users
-              get_video_encoder_configuration
-              gethostname
-              goto
-              move
-              preset
-              presets
-              reboot
-              relativemove
-              removepreset
-              reset_password
-              set_dns
-              set_motion_detection
-              set_network_interfaces
-              set_ntp
-              set_static_ip
-              set_video_encoder_configuration
-              setdatetime
-              sethostname
-              setpreset
-              status
-              stop
-              subscribe_events
-              zoom
-  Optional Options:
-  --bitrate                     Bitrate in kbps for encoder
-  --codec                       Codec type (e.g. H264)
-  --datetime                    Manual UTC datetime (optional for setdatetime)
-  --debug, -d                   Output args in JSON
-  --del_username                Username to delete (used with --action=delete_user)
-  --dhcp                        Enable DHCP (1 or 0)
-  --dns1, --dns2                DNS servers (used with --action=set_dns)
-  --dry-run, -r                 Simulate request
-  --enable                      Enable flag (1 or 0) for motion detection 
-  --eventtype                   Event filter type (optional for --action=subscribe_events)
-  --gateway                     Gateway IP (used with --action=set_network_interfaces)
-  --help, -h                    Show help
-  --hostname                    New hostname (used with --action=sethostname)
-  --ip                          IP address (used with --action=set_network_interfaces)
-  --log, -l                     Log to system log
-  --mute, -m                    Only return error code
-  --netmask                     Netmask (used with --action=set_network_interfaces)
-  --new_password                Password for new user
-  --new_userlevel               Access level (Administrator, User, Operator)
-  --new_username                Username to create (used with --action=add_user)
-  --ntp_server                  NTP server IP (used with --action=set_ntp)
-  --pan, -p                     Pan value
-  --pass                        Password (if required by camera)
-  --preset=<PRESETNAME>, -e     Preset name (for goto/remove eg: Preset001)
-  --presetname=<PRESETNAME>, -n Preset name (for setpreset eg: Preset001)
-  --resolution                  Resolution (e.g. 1920x1080) for video encoder
-  --tilt, -y                    Tilt value
-  --time, -t                    Duration (in seconds) for move/zoom
-  --token, -k                   ProfileToken (default: MainStreamProfileToken)
-  --user, -u                    Username (if required by camera)
-  --username                    Username (used with --action=reset_password)
-  --verbose, -v                 Show verbose info
-  --version                     Show version
-  --wakeup                      Send full wakeup before action cmd (GetNodes, GetConfigurations, GetPresets)
-  --wakeup_simple               Send simple wakeup before action cmd (GetPresets only)
-  --zoom, -z                    Zoom value
-  
+    node onvif_control.js --ip=IP --port=PORT --action=<action> [options]
+
+  Core options:
+    --ip, -i         Camera IP
+    --port           Camera ONVIF port (e.g. 80 or 8080)
+    --user, -u       Username (ONVIF user)
+    --pass           Password
+    --token, -k      ProfileToken (e.g. from get_profiles)
+    --time, -t       Duration (s) for continuous move/zoom
+    --debug, -d      Print arguments + raw SOAP
+    --verbose, -v    Verbose logs
+    --help, -h       This help
+    --version        Print version
+
+  Actions (grouped & alphabetically sorted):
+
+  [Discovery]
+    get_services                 Discover XAddr endpoints (Media v2/v1, PTZ)
+
+  [PTZ]
+    absolutemove                 Move to absolute PT coordinates
+    configoptions                Get PTZ configuration options
+    get_configurations           List PTZ configurations
+    get_nodes                    List PTZ nodes
+    get_presets                  List PTZ presets (tokens & names)
+    goto                         Go to preset by token
+    move                         Continuous pan/tilt for --time seconds
+    relativemove                 Relative PT step
+    removepreset                 Delete PTZ preset by token
+    setpreset                    Create a PTZ preset (returns token)
+    status                       Get PTZ status
+    stop                         Stop PT and/or zoom
+    zoom                         Continuous zoom for --time seconds
+
+  [Media]
+    get_profiles                 List media profiles (prefers Media v2)
+    get_snapshot_uri             Get JPEG snapshot URL
+    get_stream_uri               Get RTSP stream URL
+    get_video_encoder_configuration  Read current video encoder settings
+    set_video_encoder_configuration  Change video encoder settings
+
+  [Device / Network]
+    add_user                     Create ONVIF user
+    delete_user                  Delete ONVIF user
+    enable_dhcp                  Enable DHCP (IPv4)
+    factoryreset                 Factory reset the device
+    get_capabilities             Get ONVIF capabilities
+    get_device_information       Get model, firmware, serial
+    get_dns                      Get DNS configuration
+    get_network_interfaces       Get interface info: MAC, IP, DHCP
+    get_system_date_and_time     Read current device time
+    get_system_info              Get system info (model/vendor)
+    get_system_logs              Get system/access logs (--logtype=System|Access)
+    gethostname                  Get device hostname
+    reboot                       Reboot the device
+    reset_password               Reset ONVIF password for a username
+    set_dns                      Set DNS configuration
+    set_network_interfaces       Configure network interface (IPv4)
+    set_ntp                      Set NTP server
+    set_static_ip                Assign static IPv4 (shim of SetNetworkInterfaces)
+    setdatetime                  Set local time/timezone to current host time
+    sethostname                  Set device hostname
+
+  [Events / Detection]
+    get_event_properties         Get ONVIF event capabilities
+    get_motion_detection         Read motion detection settings
+    set_motion_detection         Enable/disable motion detection
+    subscribe_events             Subscribe to ONVIF events
+
+  Aliases (kept for backward compatibility):
+    configurations      → get_configurations
+    preset              → goto
+    presets             → get_presets
+    get_static_ip       → get_network_interfaces
+
+  Optional options:
+    --bitrate                     Bitrate in kbps (set_video_encoder_configuration)
+    --codec                       Codec (e.g. H264)
+    --datetime                    Manual UTC datetime (setdatetime override)
+    --del_username                Username to delete (delete_user)
+    --dhcp                        DHCP enable flag (set_network_interfaces)
+    --dns1, --dns2                DNS servers (set_dns)
+    --eventtype                   Event filter (subscribe_events)
+    --gateway                     Gateway IP (set_network_interfaces)
+    --hostname                    New hostname (sethostname)
+    --log, -l                     Send log lines to system logger
+    --netmask                     Netmask (set_network_interfaces)
+    --new_password                Password for new user (add_user)
+    --new_userlevel               Access level (Administrator, User, Operator)
+    --new_username                Username to create (add_user)
+    --ntp_server                  NTP server IP/host (set_ntp)
+    --pan, -p                     Pan value
+    --preset=<NAME>, -e           Preset name (setpreset) or for legacy alias
+    --presetname=<NAME>, -n       Preset name (setpreset)
+    --resolution                  WidthxHeight (set_video_encoder_configuration)
+    --tilt, -y                    Tilt value
+    --username                    Target username (reset_password)
+    --wakeup                      Send GetNodes→GetConfigurations→GetPresets before PTZ
+    --wakeup_simple               Send GetPresets before PTZ
+    --zoom, -z                    Zoom value
+
   `);
   process.exit(0);
 }
+
 
 if (args.help) showHelp();
 if (args.version) {
@@ -149,11 +170,11 @@ const duration = args.time ? parseFloat(String(args.time).replace(',', '.')) * 1
 if (args.time && (isNaN(duration) || duration <= 0)) errorOut('--time must be a positive number');
 
 function logMessage(msg) {
-  if (args.log) execSync(`logger -t onvif "${msg}"`);
+  if (args.log) execSync(`logger -t onvif "${msg.replace(/"/g, '\"')}"`);
 }
 
 logMessage(`Called script onvif_control.js with ${process.argv.slice(2).join(' ')}`);
-if (args.verbose) console.log(`[INFO] Called with:`, mask(args));
+if (args.verbose) console.log('[INFO] Called with:', mask(args));
 if (args.debug) console.log(JSON.stringify(mask(args), null, 2));
 if (args['dry-run']) process.exit(0);
 
@@ -172,14 +193,13 @@ const resolution = args.resolution;
 const bitrate = args.bitrate;
 const codec = args.codec;
 const eventtype = args.eventtype;
+const logtype = args.logtype;
 const enable_motion = args.enable;
-
 
 const newUser = args.new_username;
 const newPass = args.new_password;
 const newLevel = args.new_userlevel;
 const delUser = args.del_username;
-
 
 // === Helper: Build WS-Security Header ===
 function buildWSSecurity(username, password) {
@@ -196,140 +216,230 @@ function buildWSSecurity(username, password) {
   };
 }
 
+function wsseHeaderXml() {
+  if (!(args.user && args.pass)) return '';
+  const ws = buildWSSecurity(args.user, args.pass);
+  var s = '';
+  s += '<s:Header>';
+  s += '<wsse:Security s:mustUnderstand="1"';
+  s += ' xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"';
+  s += ' xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">';
+  s += '<wsse:UsernameToken>';
+  s += '<wsse:Username>' + args.user + '</wsse:Username>';
+  s += '<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">' + ws.PasswordDigest + '</wsse:Password>';
+  s += '<wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">' + ws.Nonce + '</wsse:Nonce>';
+  s += '<wsu:Created>' + ws.Created + '</wsu:Created>';
+  s += '</wsse:UsernameToken>';
+  s += '</wsse:Security>';
+  s += '</s:Header>';
+  return s;
+}
+
+// === Service selection & discovery ===
+
+const BASE_URL = `http://${ip}${args.port ? ':' + args.port : ''}`;
+
+function serviceDefaultPath(svc) {
+  switch (svc) {
+    case 'DEVICE': return `${BASE_URL}/onvif/device_service`;
+    case 'MEDIA1':
+    case 'MEDIA2':
+    case 'MEDIA':  return `${BASE_URL}/onvif/media_service`;
+    case 'PTZ':    return `${BASE_URL}/onvif/ptz_service`;
+    default:       return `${BASE_URL}/onvif/ptz_service`;
+  }
+}
+
+function nsForService(svc, isV2 = false) {
+  switch (svc) {
+    case 'DEVICE': return 'http://www.onvif.org/ver10/device/wsdl';
+    case 'MEDIA2': return 'http://www.onvif.org/ver20/media/wsdl';
+    case 'MEDIA':
+    case 'MEDIA1': return isV2 ? 'http://www.onvif.org/ver20/media/wsdl' : 'http://www.onvif.org/ver10/media/wsdl';
+    case 'PTZ':    return 'http://www.onvif.org/ver20/ptz/wsdl';
+    default:       return 'http://www.onvif.org/ver20/ptz/wsdl';
+  }
+}
+
+function pickUrlForService(svc) {
+  if (svc === 'MEDIA2' && DISCOVERY.media2) return DISCOVERY.media2;
+  if (svc === 'MEDIA1' && DISCOVERY.media1) return DISCOVERY.media1;
+  if (svc === 'MEDIA')  return DISCOVERY.media2 || DISCOVERY.media1 || serviceDefaultPath('MEDIA');
+  if (svc === 'PTZ' && DISCOVERY.ptz) return DISCOVERY.ptz;
+  if (svc === 'DEVICE') return serviceDefaultPath('DEVICE');
+  return serviceDefaultPath(svc);
+}
+
+function parseUrl(u) {
+  try { return new URL(u); } catch { return new URL(serviceDefaultPath('PTZ')); }
+}
+
+async function discoverServices() {
+  // If already discovered, skip
+  if (DISCOVERY.media1 || DISCOVERY.media2 || DISCOVERY.ptz) return DISCOVERY;
+
+  const url = serviceDefaultPath('DEVICE');
+  const envelope = `
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+  ${wsseHeaderXml()}
+  <s:Body>
+    <tds:GetServices>
+      <tds:IncludeCapability>true</tds:IncludeCapability>
+    </tds:GetServices>
+  </s:Body>
+</s:Envelope>`.trim();
+
+  const xml = await rawSoap(url, nsForService('DEVICE') + '/GetServices', envelope);
+  const blocks = xml.match(/<tds:Service>[\s\S]*?<\/tds:Service>/g) || [];
+  for (const b of blocks) {
+    const ns = ((b.match(/<tds:Namespace>(.*?)<\/tds:Namespace>/) || [])[1] || '').trim();
+    const xa = ((b.match(/<tds:XAddr>(.*?)<\/tds:XAddr>/) || [])[1] || '').trim();
+    if (!ns || !xa) continue;
+    if (ns.includes('/ver20/media/wsdl')) DISCOVERY.media2 = xa;
+    if (ns.includes('/ver10/media/wsdl')) DISCOVERY.media1 = xa;
+    if (ns.includes('/ver20/ptz/wsdl'))   DISCOVERY.ptz    = xa;
+  }
+  if (args.debug) console.error('[DISCOVERY]', DISCOVERY);
+  return DISCOVERY;
+}
+
+// low-level SOAP POST (returns raw XML)
+function rawSoap(urlStr, actionHeader, envelope) {
+  return new Promise((resolve, reject) => {
+    const u = parseUrl(urlStr);
+    const isHttps = u.protocol === 'https:';
+    const mod = isHttps ? https : http;
+
+    const opts = {
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (isHttps ? 443 : 80),
+      method: 'POST',
+      path: u.pathname + (u.search || ''),
+      timeout: SOCKET_TIMEOUT_MS,
+      headers: {
+        'Content-Type': `application/soap+xml; charset=utf-8; action="${actionHeader}"`,
+        'Content-Length': Buffer.byteLength(envelope)
+      }
+    };
+
+    const req = mod.request(opts, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    });
+
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout calling ${u.href}`)); });
+    req.on('error', err => reject(err));
+
+    req.write(envelope);
+    req.end();
+  });
+}
+
+// === SOAP send wrapper (keeps original style) ===
+// svc: 'PTZ' (default) | 'DEVICE' | 'MEDIA' | 'MEDIA1' | 'MEDIA2'
+function sendSoap(action, body, cb, svc = 'PTZ') {
+  const wsse = wsseHeaderXml();
+  const actionNs = nsForService(svc, svc === 'MEDIA' || svc === 'MEDIA2');
+  const doSend = async () => {
+    if (svc !== 'PTZ') await discoverServices(); // ensure endpoints for media/device as needed
+    else await discoverServices();               // also get PTZ XAddr if present
+
+    const url = pickUrlForService(svc);
+    const envelope = `<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+  ${wsse}
+  <s:Body>${body}</s:Body>
+</s:Envelope>`;
+
+    if (args.verbose || args.debug) {
+      console.error(`\n[ENDPOINT] ${svc} → ${url}`);
+      console.error(`REQUEST for ${action}:\n${body}\n`);
+    }
+
+    rawSoap(url, `${actionNs}/${action}`, envelope)
+      .then(xml => {
+        if (args.verbose || args.debug) {
+          console.error(`RESPONSE for ${action}:\n${xml}\n`);
+          if (args.log) logMessage(`SOAP response for ${action}: ${xml}`);
+        } else {
+          xml2js.parseString(xml, { explicitArray: false }, (err, result) => {
+            if (err) {
+              console.error('[ERROR] Failed to parse XML:', err.message);
+            } else {
+              try {
+                const body = result['s:Envelope']['s:Body'];
+                const actionKey = Object.keys(body)[0];
+                const payload = body[actionKey];
+                console.log('[RESPONSE]', actionKey);
+                for (const k in payload) {
+                  const val = payload[k];
+                  console.log(`  ${k}:`, typeof val === 'string' ? val : JSON.stringify(val));
+                }
+              } catch (e) {
+                console.error('[ERROR] Response structure unexpected:', e.message);
+              }
+            }
+          });
+        }
+
+        // Auto-retry flow for missing preset tokens
+        if (/NoToken|preset token does not exist/i.test(xml)) {
+          if (String(action).toLowerCase().includes('gotopreset')) {
+            console.log('[AUTO] Preset token not found → requesting GetPresets list…');
+            const bodyPresets = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
+            return rawSoap(pickUrlForService('PTZ'), `${nsForService('PTZ')}/GetPresets`, `<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">${wsse}<s:Body>${bodyPresets}</s:Body></s:Envelope>`)
+              .then(async () => { await sleep(WAKEUP_SLEEP_MS); console.log('[AUTO] Retrying original goto command…'); return sendSoap(action, body, cb, 'PTZ'); });
+          }
+        }
+
+        cb && cb();
+      })
+      .catch(err => {
+        errorOut(`HTTP/SOAP error on ${action}: ${err.message}`);
+      });
+  };
+
+  // Wakeup chain (PTZ only)
+  if (svc === 'PTZ') {
+    const wakeupTasks = [];
+    if (WAKEUP) wakeupTasks.push(cb => wakeupSequence(cb));
+    if (WAKEUP_SIMPLE) wakeupTasks.push(cb => wakeupSimple(cb));
+
+    let idx = 0;
+    const next = () => (idx < wakeupTasks.length ? wakeupTasks[idx++](next) : doSend());
+    next();
+  } else {
+    doSend();
+  }
+}
+
 async function wakeupSimple(cb) {
   if (args.verbose) console.log('[WAKEUP_SIMPLE] Sending GetPresets...');
   const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
-  realSendSoap('GetPresets', body, async () => {
+  sendSoap('GetPresets', body, async () => {
     await sleep(WAKEUP_SLEEP_MS);
     cb && cb();
-  });
+  }, 'PTZ');
 }
 
 function wakeupSequence(cb) {
   if (args.verbose) console.log('[WAKEUP] Sending Wake-up Sequence (GetNodes, GetConfigurations, GetPresets)…');
   const steps = [
-    () => realSendSoap('GetNodes', '<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', async () => {
+    () => sendSoap('GetNodes', '<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', async () => {
       await sleep(WAKEUP_SLEEP_MS);
       steps[1]();
-    }),
-    () => realSendSoap('GetConfigurations', '<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', async () => {
+    }, 'PTZ'),
+    () => sendSoap('GetConfigurations', '<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', async () => {
       await sleep(WAKEUP_SLEEP_MS);
       steps[2]();
-    }),
-    () => realSendSoap('GetPresets', `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`, async () => {
-      await sleep(WAKEUP_SLEEP_MS);   // ⏳ dritte Pause
+    }, 'PTZ'),
+    () => sendSoap('GetPresets', `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`, async () => {
+      await sleep(WAKEUP_SLEEP_MS);
       cb && cb();
-    })
+    }, 'PTZ')
   ];
-  steps[0]();   // Sequenz starten
-}
-
-function sendSoap(action, body, cb) {
-  const wakeupTasks = [];
-  if (WAKEUP) wakeupTasks.push(cb => wakeupSequence(cb));
-  if (WAKEUP_SIMPLE) wakeupTasks.push(cb => wakeupSimple(cb));
-
-  let index = 0;
-  function next() {
-    if (index < wakeupTasks.length) {
-      wakeupTasks[index++](next);
-    } else {
-      realSendSoap(action, body, cb);
-    }
-  }
-  next();
-}
-
-function realSendSoap(action, body, cb) {
-  const curAction = action;
-  const needAuth = args.user && args.pass;
-  let headerXml = '';
-  if (needAuth) {
-    const ws = buildWSSecurity(args.user, args.pass);
-    headerXml = `
-  <s:Header>
-    <Security s:mustUnderstand="1"
-      xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
-      <UsernameToken>
-        <Username>${args.user}</Username>
-        <Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">${ws.PasswordDigest}</Password>
-        <Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">${ws.Nonce}</Nonce>
-        <Created xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">${ws.Created}</Created>
-      </UsernameToken>
-    </Security>
-  </s:Header>`;
-  }
-
-  const soapEnvelope = `
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
-  ${headerXml}
-  <s:Body>${body}</s:Body>
-</s:Envelope>`.trim();const req = http.request({
-    host: args.ip,
-    port: args.port,
-    method: 'POST',
-    path: '/onvif/ptz_service',
-    timeout: SOCKET_TIMEOUT_MS,
-    headers: {
-      'Content-Type': 'application/soap+xml; charset=utf-8; action="http://www.onvif.org/ver20/ptz/wsdl/' + action + '"',
-      'Content-Length': Buffer.byteLength(soapEnvelope)
-    }
-  }, res => {
-    let data = '';
-    res.on('data', chunk => data += chunk);
-    res.on('end', () => {
-  if (args.verbose || args.debug) {
-    console.error(`\nREQUEST for ${action}:\n${body}\n`);
-    console.error(`RESPONSE for ${action}:\n${data}\n`);
-    if (args.log) logMessage(`SOAP response for ${action}: ${data}`);
-  } else {
-    xml2js.parseString(data, { explicitArray: false }, (err, result) => {
-      if (err) {
-        console.error("[ERROR] Failed to parse XML:", err.message);
-        return;
-      }
-      try {
-        const body = result['s:Envelope']['s:Body'];
-        const actionKey = Object.keys(body)[0];
-        const payload = body[actionKey];
-        console.log("[RESPONSE]", actionKey);
-        for (const k in payload) {
-          const val = payload[k];
-          console.log(`  ${k}:`, typeof val === 'string' ? val : JSON.stringify(val));
-        }
-      } catch (e) {
-        console.error("[ERROR] Response structure unexpected:", e.message);
-      }
-    });
-  }
-  if (/NoToken|preset token does not exist/i.test(data)) {
-   if (curAction.startsWith('Goto') || curAction.toLowerCase().includes('goto')) {
-      console.log('[AUTO] Preset token not found  requesting GetPresets list');
-       const failedCall = () => realSendSoap(curAction, body, cb, true);
-      const bodyPresets = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
-      return realSendSoap('GetPresets', bodyPresets, async () => {
-        await sleep(WAKEUP_SLEEP_MS);
-        console.log('[AUTO] Retrying original goto command');
-        failedCall();
-      });
-    }
-  }
-  cb && cb();
-});
-  });
-
-  req.on('timeout', () => {
-    req.destroy();
-    errorOut(`Timeout on ${action}`);
-  });
-
-  req.on('error', err => {
-    errorOut(`HTTP error on ${action}: ${err.message}`);
-  });
-
-  if (args.log) logMessage(`SOAP request for ${action}: ${body.replace(/[\n\r]+/g, '')}`);
-  req.write(soapEnvelope);
-  req.end();
+  steps[0]();
 }
 
 // === ACTIONS ===
@@ -344,7 +454,7 @@ const PTZ = {
     </tptz:ContinuousMove>`;
     sendSoap('ContinuousMove', body, () => {
       setTimeout(() => PTZ.stop(true, false), duration);
-    });
+    }, 'PTZ');
   },
 
   zoom() {
@@ -357,7 +467,7 @@ const PTZ = {
     </tptz:ContinuousMove>`;
     sendSoap('ContinuousMove', body, () => {
       setTimeout(() => PTZ.stop(false, true), duration);
-    });
+    }, 'PTZ');
   },
 
   stop(pan = true, zoom = true) {
@@ -365,7 +475,7 @@ const PTZ = {
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
       <PanTilt>${pan}</PanTilt><Zoom>${zoom}</Zoom>
     </tptz:Stop>`;
-    sendSoap('Stop', body);
+    sendSoap('Stop', body, null, 'PTZ');
   },
 
   goto() {
@@ -374,7 +484,7 @@ const PTZ = {
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
       <PresetToken>${args.preset}</PresetToken>
     </tptz:GotoPreset>`;
-    sendSoap('GotoPreset', body);
+    sendSoap('GotoPreset', body, null, 'PTZ');
   },
 
   setpreset() {
@@ -383,7 +493,7 @@ const PTZ = {
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
       <PresetName>${args.presetname}</PresetName>
     </tptz:SetPreset>`;
-    sendSoap('SetPreset', body);
+    sendSoap('SetPreset', body, null, 'PTZ');
   },
 
   removepreset() {
@@ -392,21 +502,21 @@ const PTZ = {
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
       <PresetToken>${args.preset}</PresetToken>
     </tptz:RemovePreset>`;
-    sendSoap('RemovePreset', body);
+    sendSoap('RemovePreset', body, null, 'PTZ');
   },
 
   presets() {
     const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GetPresets>`;
-    sendSoap('GetPresets', body);
+    sendSoap('GetPresets', body, null, 'PTZ');
   },
 
   status() {
     const body = `<tptz:GetStatus xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GetStatus>`;
-    sendSoap('GetStatus', body);
+    sendSoap('GetStatus', body, null, 'PTZ');
   },
 
   absolutemove() {
@@ -418,7 +528,7 @@ const PTZ = {
         ${'zoom' in args ? `<Zoom x="${args.zoom}" xmlns="http://www.onvif.org/ver10/schema"/>` : ''}
       </Position>
     </tptz:AbsoluteMove>`;
-    sendSoap('AbsoluteMove', body);
+    sendSoap('AbsoluteMove', body, null, 'PTZ');
   },
 
   relativemove() {
@@ -430,22 +540,24 @@ const PTZ = {
         ${'zoom' in args ? `<Zoom x="${args.zoom}" xmlns="http://www.onvif.org/ver10/schema"/>` : ''}
       </Translation>
     </tptz:RelativeMove>`;
-    sendSoap('RelativeMove', body);
+    sendSoap('RelativeMove', body, null, 'PTZ');
   },
 
   configoptions() {
     const body = `<tptz:GetConfigurationOptions xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ConfigurationToken>${PROFILE_TOKEN}</ConfigurationToken>
     </tptz:GetConfigurationOptions>`;
-    sendSoap('GetConfigurationOptions', body);
+    sendSoap('GetConfigurationOptions', body, null, 'PTZ');
   },
+
   reboot() {
     const body = `<tds:SystemReboot xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SystemReboot', body);
+    sendSoap('SystemReboot', body, null, 'DEVICE');
   },
+
   factoryreset() {
     const body = `<tds:FactoryReset xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('FactoryReset', body);
+    sendSoap('FactoryReset', body, null, 'DEVICE');
   },
 
   setdatetime() {
@@ -456,9 +568,8 @@ const PTZ = {
     const tzHours = String(Math.floor(absMin / 60)).padStart(2, '0');
     const tzMins  = String(absMin % 60).padStart(2, '0');
     const timezone = `GMT${sign}${tzHours}:${tzMins}`;
-    // const timezone = "GMT+00:00";
 
-    const body = `<tds:SetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+    const body = `<tds:SetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
       <tds:DateTimeType>Manual</tds:DateTimeType>
       <tds:DaylightSavings>false</tds:DaylightSavings>
       <tds:TimeZone>
@@ -478,111 +589,117 @@ const PTZ = {
       </tds:UTCDateTime>
     </tds:SetSystemDateAndTime>`;
 
-    sendSoap('SetSystemDateAndTime', body);
+    sendSoap('SetSystemDateAndTime', body, null, 'DEVICE');
   },
+
   get_snapshot_uri() {
-    const body = `<tds:GetSnapshotUri xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetSnapshotUri', body);
+    const body = `<trt:GetSnapshotUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+      <trt:ProfileToken>${PROFILE_TOKEN}</trt:ProfileToken>
+    </trt:GetSnapshotUri>`;
+    sendSoap('GetSnapshotUri', body, null, 'MEDIA'); // will choose media2 if available
   },
+
   get_stream_uri() {
-    const body = `<tds:GetStreamUri xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetStreamUri', body);
+    const body = `<trt:GetStreamUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+      <trt:StreamSetup>
+        <tt:Stream xmlns:tt="http://www.onvif.org/ver10/schema">RTP-Unicast</tt:Stream>
+        <tt:Transport xmlns:tt="http://www.onvif.org/ver10/schema">
+          <tt:Protocol>RTSP</tt:Protocol>
+        </tt:Transport>
+      </trt:StreamSetup>
+      <trt:ProfileToken>${PROFILE_TOKEN}</trt:ProfileToken>
+    </trt:GetStreamUri>`;
+    sendSoap('GetStreamUri', body, null, 'MEDIA');
   },
+
   get_profiles() {
-    const body = `<tds:GetProfiles xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetProfiles', body);
+    // Use Media2 if present, else Media1
+    // Media v2
+    const bodyV2 = `<tr2:GetProfiles xmlns:tr2="http://www.onvif.org/ver20/media/wsdl"/>`;
+    // Media v1
+    const bodyV1 = `<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl"/>`;
+
+    discoverServices()
+      .then(() => {
+        if (DISCOVERY.media2) {
+          sendSoap('GetProfiles', bodyV2, null, 'MEDIA2');
+        } else {
+          sendSoap('GetProfiles', bodyV1, null, 'MEDIA1');
+        }
+      })
+      .catch(err => errorOut(`Discovery failed: ${err.message}`));
   },
+
   get_video_encoder_configuration() {
-    const body = `<tds:GetVideoEncoderConfiguration xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetVideoEncoderConfiguration', body);
+    const body = `<trt:GetVideoEncoderConfiguration xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+      <trt:ConfigurationToken>${PROFILE_TOKEN}</trt:ConfigurationToken>
+    </trt:GetVideoEncoderConfiguration>`;
+    sendSoap('GetVideoEncoderConfiguration', body, null, 'MEDIA');
   },
+
   set_video_encoder_configuration() {
-    const body = `<tds:SetVideoEncoderConfiguration xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetVideoEncoderConfiguration', body);
+    if (!resolution || !bitrate || !codec) errorOut('Missing --resolution, --bitrate, or --codec');
+    const [w, h] = String(resolution).split('x');
+    const body = `<trt:SetVideoEncoderConfiguration xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+      <trt:Configuration>
+        <tt:Encoding xmlns:tt="http://www.onvif.org/ver10/schema">${codec}</tt:Encoding>
+        <tt:Resolution>
+          <tt:Width>${w}</tt:Width>
+          <tt:Height>${h}</tt:Height>
+        </tt:Resolution>
+        <tt:RateControl>
+          <tt:BitrateLimit>${bitrate}</tt:BitrateLimit>
+        </tt:RateControl>
+      </trt:Configuration>
+      <trt:ForcePersistence>true</trt:ForcePersistence>
+    </trt:SetVideoEncoderConfiguration>`;
+    sendSoap('SetVideoEncoderConfiguration', body, null, 'MEDIA');
   },
+
   get_system_date_and_time() {
     const body = `<tds:GetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetSystemDateAndTime', body);
+    sendSoap('GetSystemDateAndTime', body, null, 'DEVICE');
   },
+
   get_system_info() {
     const body = `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetDeviceInformation', body);
+    sendSoap('GetDeviceInformation', body, null, 'DEVICE');
   },
+
   get_capabilities() {
     const body = `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetCapabilities', body);
+    sendSoap('GetCapabilities', body, null, 'DEVICE');
   },
+
   get_network_interfaces() {
     const body = `<tds:GetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetNetworkInterfaces', body);
+    sendSoap('GetNetworkInterfaces', body, null, 'DEVICE');
   },
+
   set_network_interfaces() {
-    const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetNetworkInterfaces', body);
+    const dhcpFlag = dhcp === '1' ? 'true' : 'false';
+    if (!ip || !netmask) errorOut('Missing --ip or --netmask');
+    const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
+      <tds:InterfaceToken>eth0</tds:InterfaceToken>
+      <tds:NetworkInterface>
+        <tt:Enabled>true</tt:Enabled>
+        <tt:IPv4>
+          <tt:Enabled>true</tt:Enabled>
+          <tt:Manual>
+            <tt:Address>${ip}</tt:Address>
+            <tt:PrefixLength>${netmaskToPrefix(netmask)}</tt:PrefixLength>
+            
+          </tt:Manual>
+          <tt:DHCP>${dhcpFlag}</tt:DHCP>
+        </tt:IPv4>
+      </tds:NetworkInterface>
+    </tds:SetNetworkInterfaces>`;
+    sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
   },
+
   get_users() {
     const body = `<tds:GetUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetUsers', body);
-  },
-  delete_user() {
-    const body = `<tds:DeleteUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('DeleteUsers', body);
-  },
-  set_ntp() {
-    const body = `<tds:SetNTP xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetNTP', body);
-  },
-  get_system_logs() {
-    const body = `<tds:GetSystemLog xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetSystemLog', body);
-  },
-  get_dns() {
-    const body = `<tds:GetDNS xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetDNS', body);
-  },
-  set_dns() {
-    const body = `<tds:SetDNS xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetDNS', body);
-  },
-  get_motion_detection() {
-    const body = `<tds:GetMotionDetection xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetMotionDetection', body);
-  },
-  set_motion_detection() {
-    const body = `<tds:SetMotionDetection xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetMotionDetection', body);
-  },
-  get_event_properties() {
-    const body = `<tds:GetEventProperties xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetEventProperties', body);
-  },
-  subscribe_events() {
-    const body = `<tds:Subscribe xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('Subscribe', body);
-  },
-  gethostname() {
-    const body = `<tds:GetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetHostname', body);
-  },
-  sethostname() {
-    const body = `<tds:SetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetHostname', body);
-  },
-  set_static_ip() {
-    const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetNetworkInterfaces', body);
-  },
-  enable_dhcp() {
-    const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetNetworkInterfaces', body);
-  },
-  reset_password() {
-    const body = `<tds:SetUser xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SetUser', body);
-  },
-  get_device_information() {
-    const body = `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetDeviceInformation', body);
+    sendSoap('GetUsers', body, null, 'DEVICE');
   },
 
   add_user() {
@@ -594,7 +711,7 @@ const PTZ = {
         <tt:UserLevel xmlns:tt="http://www.onvif.org/ver10/schema">${newLevel}</tt:UserLevel>
       </tds:User>
     </tds:CreateUsers>`;
-    sendSoap('CreateUsers', body);
+    sendSoap('CreateUsers', body, null, 'DEVICE');
   },
 
   delete_user() {
@@ -602,92 +719,70 @@ const PTZ = {
     const body = `<tds:DeleteUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
       <tds:Username>${delUser}</tds:Username>
     </tds:DeleteUsers>`;
-    sendSoap('DeleteUsers', body);
+    sendSoap('DeleteUsers', body, null, 'DEVICE');
   },
-
 
   sethostname() {
     if (!hostname) errorOut('Missing --hostname');
     const body = `<tds:SetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
       <tds:Name>${hostname}</tds:Name>
     </tds:SetHostname>`;
-    sendSoap('SetHostname', body);
-  },
-
-  set_network_interfaces() {
-    if (!ip || !netmask || !gateway) errorOut('Missing --ip, --netmask, or --gateway');
-    const dhcpFlag = dhcp === '1' ? 'true' : 'false';
-    const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
-      <tds:InterfaceToken>eth0</tds:InterfaceToken>
-      <tds:NetworkInterface>
-        <tt:Enabled>true</tt:Enabled>
-        <tt:IPv4>
-          <tt:Enabled>true</tt:Enabled>
-          <tt:Manual>
-            <tt:Address>${ip}</tt:Address>
-            <tt:PrefixLength>24</tt:PrefixLength>
-          </tt:Manual>
-          <tt:DHCP>${dhcpFlag}</tt:DHCP>
-        </tt:IPv4>
-      </tds:NetworkInterface>
-    </tds:SetNetworkInterfaces>`;
-    sendSoap('SetNetworkInterfaces', body);
+    sendSoap('SetHostname', body, null, 'DEVICE');
   },
 
   set_dns() {
     if (!dns1 && !dns2) errorOut('Missing --dns1 or --dns2');
-    const dnsParts = [dns1, dns2].filter(Boolean).map(d => `<tt:Type>IPv4</tt:Type><tt:IPv4Address>${d}</tt:IPv4Address>`).join("");
-    const body = `<tds:SetDNS xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+    const dnsBlocks = [dns1, dns2].filter(Boolean).map(d => `<tds:DNSManual><tt:Type>IPv4</tt:Type><tt:IPv4Address>${d}</tt:IPv4Address></tds:DNSManual>`).join('');
+    const body = `<tds:SetDNS xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
       <tds:FromDHCP>false</tds:FromDHCP>
-      <tds:DNSManual>${dnsParts}</tds:DNSManual>
+      ${dnsBlocks}
     </tds:SetDNS>`;
-    sendSoap('SetDNS', body);
+    sendSoap('SetDNS', body, null, 'DEVICE');
+  },
+
+  get_dns() {
+    const body = `<tds:GetDNS xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
+    sendSoap('GetDNS', body, null, 'DEVICE');
   },
 
   set_ntp() {
     if (!ntp) errorOut('Missing --ntp_server');
-    const body = `<tds:SetNTP xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+    const body = `<tds:SetNTP xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
       <tds:FromDHCP>false</tds:FromDHCP>
       <tds:NTPManual>
         <tt:Type>IPv4</tt:Type>
         <tt:IPv4Address>${ntp}</tt:IPv4Address>
       </tds:NTPManual>
     </tds:SetNTP>`;
-    sendSoap('SetNTP', body);
+    sendSoap('SetNTP', body, null, 'DEVICE');
   },
 
   reset_password() {
     if (!username_reset || !newpass_reset) errorOut('Missing --username or --new_password');
-    const body = `<tds:SetUser xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+    const body = `<tds:SetUser xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
       <tds:User>
         <tt:Username>${username_reset}</tt:Username>
         <tt:Password>${newpass_reset}</tt:Password>
       </tds:User>
     </tds:SetUser>`;
-    sendSoap('SetUser', body);
+    sendSoap('SetUser', body, null, 'DEVICE');
   },
 
-  set_video_encoder_configuration() {
-    if (!resolution || !bitrate || !codec) errorOut('Missing --resolution, --bitrate, or --codec');
-    const body = `<trt:SetVideoEncoderConfiguration xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
-      <trt:Configuration>
-        <tt:Encoding xmlns:tt="http://www.onvif.org/ver10/schema">${codec}</tt:Encoding>
-        <tt:Resolution>
-          <tt:Width>${resolution.split('x')[0]}</tt:Width>
-          <tt:Height>${resolution.split('x')[1]}</tt:Height>
-        </tt:Resolution>
-        <tt:RateControl>
-          <tt:BitrateLimit>${bitrate}</tt:BitrateLimit>
-        </tt:RateControl>
-      </trt:Configuration>
-      <trt:ForcePersistence>true</trt:ForcePersistence>
-    </trt:SetVideoEncoderConfiguration>`;
-    sendSoap('SetVideoEncoderConfiguration', body);
+  get_event_properties() {
+    // Not fully mapped to event service XAddr (tev) – keep device path to avoid breaking old cams
+    const body = `<tev:GetEventProperties xmlns:tev="http://www.onvif.org/ver10/events/wsdl"/>`;
+    sendSoap('GetEventProperties', body, null, 'DEVICE');
   },
 
   subscribe_events() {
     const body = `<tev:Subscribe xmlns:tev="http://www.onvif.org/ver10/events/wsdl"/>`;
-    sendSoap('Subscribe', body);
+    sendSoap('Subscribe', body, null, 'DEVICE');
+  },
+
+  get_motion_detection() {
+    // Many cams expose motion via device or analytics extensions; keep as-is
+    const body = `<tmd:GetMotionDetection xmlns:tmd="http://www.onvif.org/ver10/schema"/>`;
+    sendSoap('GetMotionDetection', body, null, 'DEVICE');
   },
 
   set_motion_detection() {
@@ -695,13 +790,13 @@ const PTZ = {
     const body = `<tmd:SetMotionDetection xmlns:tmd="http://www.onvif.org/ver10/schema">
       <tmd:Enabled>${enable_motion}</tmd:Enabled>
     </tmd:SetMotionDetection>`;
-    sendSoap('SetMotionDetection', body);
+    sendSoap('SetMotionDetection', body, null, 'DEVICE');
   },
-// === Added alias/wrapper actions for README parity ===
+
   configurations() {
-    // Alias for GetConfigurations (media/PTZ)
+    // Alias for GetConfigurations (PTZ)
     const body = `<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
-    sendSoap('GetConfigurations', body);
+    sendSoap('GetConfigurations', body, null, 'PTZ');
   },
 
   get_configurations() {
@@ -710,25 +805,93 @@ const PTZ = {
 
   get_nodes() {
     const body = `<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
-    sendSoap('GetNodes', body);
+    sendSoap('GetNodes', body, null, 'PTZ');
   },
 
   get_presets() {
-    // Alias to existing 'presets' action
+    // Alias to 'presets'
     this.presets();
   },
 
   preset() {
-    // Alias to existing 'goto' action
+    // Alias to 'goto'
     this.goto();
   },
 
   get_static_ip() {
-    // ONVIF does not have dedicated 'GetStaticIP', use GetNetworkInterfaces
+    // No dedicated ONVIF call; reuse GetNetworkInterfaces
     this.get_network_interfaces();
   },
+
+
+  gethostname() {
+    const body = `<tds:GetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
+    sendSoap('GetHostname', body, null, 'DEVICE');
+  },
+
+  get_system_logs() {
+    // ONVIF GetSystemLog takes a type (System or Access) in some implementations; default to System
+    const type = (logtype && String(logtype).toLowerCase() === 'access') ? 'Access' : 'System';
+    const body = `<tds:GetSystemLog xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+      <tds:LogType>${type}</tds:LogType>
+    </tds:GetSystemLog>`;
+    sendSoap('GetSystemLog', body, null, 'DEVICE');
+  },
+
+  set_static_ip() {
+    // Compatibility shim: call set_network_interfaces with DHCP=false
+    const dhcpFlag = 'false';
+    if (!ip || !netmask) errorOut('Missing --ip or --netmask');
+    const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
+      <tds:InterfaceToken>eth0</tds:InterfaceToken>
+      <tds:NetworkInterface>
+        <tt:Enabled>true</tt:Enabled>
+        <tt:IPv4>
+          <tt:Enabled>true</tt:Enabled>
+          <tt:Manual>
+            <tt:Address>${ip}</tt:Address>
+            <tt:PrefixLength>${netmaskToPrefix(netmask)}</tt:PrefixLength>
+            
+          </tt:Manual>
+          <tt:DHCP>${dhcpFlag}</tt:DHCP>
+        </tt:IPv4>
+      </tds:NetworkInterface>
+    </tds:SetNetworkInterfaces>`;
+    sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
+  },
+
+  enable_dhcp() {
+    // Compatibility shim: enable DHCP on IPv4 (no static manual block)
+    const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
+      <tds:InterfaceToken>eth0</tds:InterfaceToken>
+      <tds:NetworkInterface>
+        <tt:Enabled>true</tt:Enabled>
+        <tt:IPv4>
+          <tt:Enabled>true</tt:Enabled>
+          <tt:DHCP>true</tt:DHCP>
+        </tt:IPv4>
+      </tds:NetworkInterface>
+    </tds:SetNetworkInterfaces>`;
+    sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
+  },
+  // NEW: Device:GetServices to print XAddrs (Media/PTZ)
+  get_services() {
+    discoverServices()
+      .then(() => {
+        console.log(JSON.stringify(DISCOVERY, null, 2));
+      })
+      .catch(err => errorOut(`Discovery failed: ${err.message}`));
+  }
 };
 
-const act = args.action.toLowerCase();
+function netmaskToPrefix(mask) {
+  // naive conversion (IPv4 dotted decimal to prefix length)
+  const parts = String(mask).split('.').map(n => parseInt(n, 10));
+  if (parts.length !== 4 || parts.some(n => isNaN(n) || n < 0 || n > 255)) return 24;
+  const bits = parts.map(n => n.toString(2).padStart(8, '0')).join('');
+  return bits.split('1').length - 1; // count ones
+}
+
+const act = String(args.action || '').toLowerCase();
 if (!PTZ[act]) errorOut(`Unsupported action: ${act}`);
 PTZ[act]();
