@@ -1,7 +1,8 @@
+
 # ONVIF Control Script
 
 **Version:** 1.1.7 (Full Extended)  
-**Build Date:** 2025-08-22 
+**Build Date:** 2025-07-04 
 **Author:** camel (camelcamro)
 
 ---
@@ -106,100 +107,78 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 
 ## 🔧 Supported Actions
 
-Below is the complete list of `--action` values supported by `onvif_control.js`:
+### [Discovery]
+- `get_services` — Discover XAddr endpoints (Media v2/v1, PTZ)
 
-| Action                   | Description                            |
-|---------------------------|----------------------------------------|
-| `absolutemove` | Move camera to absolute PTZ coordinates |
-| `add_user`               | Add ONVIF user |
-| `configoptions`               | Get configuration options |
-| `configurations`               | Get PTZ configurations |
-| `delete_user`               | Delete ONVIF user |
-| `enable_dhcp`               | Enable DHCP on network interface |
-| `factoryreset`               | Factory reset the device |
-| `get_capabilities`               | Get ONVIF capabilities |
-| `get_configurations`               | List media/PTZ configurations |
-| `get_device_information`               | Get model, firmware version, serial |
-| `get_dns`               | Retrieve DNS configuration |
-| `get_event_properties`               | Get ONVIF event capabilities |
-| `get_motion_detection`               | Read motion detection settings |
-| `get_network_interfaces`               | Get interface info: MAC, IP, DHCP |
-| `get_nodes`               | List PTZ nodes |
-| `get_presets`               | Get PTZ preset positions |
-| `get_profiles`               | List video/audio profiles |
-| `get_snapshot_uri`               | Get JPEG snapshot URL |
-| `get_static_ip`               | Get static IP settings |
-| `get_stream_uri`               | Get RTSP stream URL |
-| `get_system_date_and_time`               | Read current device time |
-| `get_system_info`               | Get system info (model, vendor) |
-| `get_system_logs`               | Get log entries (system or access) |
-| `get_users`               | List ONVIF users |
-| `get_video_encoder_configuration` | Retrieve current video encoder settings |
-| `gethostname`               | Get device hostname |
-| `goto`               | Go to PTZ preset |
-| `move`               | Relative PTZ move |
-| `preset`               | Go to preset position |
-| `presets`               | Alias for get_presets |
-| `reboot`               | Reboot the camera |
-| `relativemove` | Move camera relative to current PTZ position |
-| `removepreset`               | Delete PTZ preset |
-| `reset_password`               | Reset ONVIF password |
-| `set_dns`               | Set DNS configuration |
-| `set_motion_detection`               | Enable/disable motion detection |
-| `set_network_interfaces` | Configure detailed network interface parameters |
-| `set_ntp`               | Set NTP server |
-| `set_static_ip`               | Assign static IP |
-| `set_video_encoder_configuration`               | Change video settings |
-| `setdatetime`               | Set local time and timezone dynamically |
-| `sethostname`               | Set device hostname |
-| `setpreset` | Save current position as a PTZ preset |
-| `status`               | Get PTZ status |
-| `stop` | Stop any ongoing PTZ or zoom movement |
-| `subscribe_events`               | Subscribe to ONVIF events |
-| `zoom`               | Zoom in/out (relative or absolute) |
+### [PTZ]
+- `absolutemove` — Move to absolute PT coordinates
+- `configoptions` — Get PTZ configuration options
+- `get_configurations` — List PTZ configurations
+- `get_nodes` — List PTZ nodes
+- `get_presets` — List PTZ presets (tokens & names)
+- `goto` — Go to preset by **PresetToken**
+- `move` — Continuous pan/tilt for `--time` seconds
+- `relativemove` — Relative PT step
+- `removepreset` — Delete PTZ preset by token
+- `setpreset` — Create a PTZ preset (returns token)
+- `status` — Get PTZ status
+- `stop` — Stop PT and/or zoom
+- `zoom` — Continuous zoom for `--time` seconds
 
-### Optional Option Parameters
-| Option                     | Alias | Description                                                      |
-|----------------------------|-------|------------------------------------------------------------------|
-| `--bitrate`                |       | Bitrate for encoder in kbps                                      |
-| `--codec`                  |       | Video codec type (e.g., H264)                                    |
-| `--datetime`               |       | Manual time string for `setdatetime` (optional)                  |
-| `--debug`                  | `-d`  | Show debug JSON                                                  |
-| `--del_username`           |       | Username to delete (used with `--action=delete_user`)            |
-| `--dhcp`                   |       | Enable DHCP (`1` or `0`)                                         |
-| `--dns1`, `--dns2`         |       | DNS servers (used with `--action=set_dns`)                       |
-| `--dry-run`                | `-r`  | Show parameters but do not send SOAP                             |
-| `--enable`                 |       | Enable/Disable flags (e.g., for motion detection)                |
-| `--eventtype`              |       | Filter for event subscriptions (optional)                        |
-| `--gateway`                |       | Gateway IP (used with `--action=set_network_interfaces`)         |
-| `--help`                   | `-h`  | Show usage                                                       |
-| `--hostname`               |       | New hostname (used with `--action=sethostname`)                  |
-| `--log`                    | `-l`  | Write to system log                                              |
-| `--mute`                   | `-m`  | Suppress all output except return code                           |
-| `--netmask`                |       | Netmask (used with `--action=set_network_interfaces`)            |
-| `--new_password`           |       | Password for new user                                            |
-| `--new_userlevel`          |       | Access level (`Administrator`, `User`, etc.)                     |
-| `--new_username`           |       | Username to create (used with `--action=add_user`)               |
-| `--ntp_server`             |       | NTP server (used with `--action=set_ntp`)                        |
-| `--pan`                    | `-p`  | Pan direction/position (-1.0 to 1.0)                             |
-| `--pass`                   |       | Password                                                         |
-| `--preset=<PRESETNAME>`    | `-e`  | Preset name (used with `goto`, `removepreset`)                   |
-| `--presetname=<PRESETNAME>`| `-n`  | Preset name (used with `setpreset`)                              |
-| `--resolution`             |       | e.g., `1920x1080` for encoder config                             |
-| `--tilt`                   | `-y`  | Tilt direction/position (-1.0 to 1.0)                            |
-| `--time`                   | `-t`  | Duration in seconds (for movement/zoom)                          |
-| `--token`                  | `-k`  | Profile token (default: `MainStreamProfileToken`)                |
-| `--user`                   | `-u`  | Username                                                         |
-| `--username`               |       | Username to update (used with `--action=reset_password`)         |
-| `--verbose`                | `-v`  | Enable verbose output                                            |
-| `--version`                |       | Show version info                                                |
-| `--wakeup_simple`          |       | Send simple wakeup before (GetPresets only)                      |
-| `--wakeup`                 |       | Send full wakeup before (GetNodes, GetConfigurations, GetPresets)|
-| `--zoom`                   | `-z`  | Zoom direction/position (-1.0 to 1.0)                            |
-|----------------------------|-------|------------------------------------------------------------------|
----
+### [Media]
+- `get_profiles` — List media profiles (**prefers Media v2**, fallback to v1)
+- `get_snapshot_uri` — Get JPEG snapshot URL
+- `get_stream_uri` — Get RTSP stream URL
+- `get_video_encoder_configuration` — Read current video encoder settings
+- `set_video_encoder_configuration` — Change video encoder settings
+
+### [Device / Network]
+- `add_user` — Create ONVIF user
+- `delete_user` — Delete ONVIF user
+- `enable_dhcp` — Enable DHCP (IPv4) *(shim via SetNetworkInterfaces)*
+- `factoryreset` — Factory reset the device
+- `get_capabilities` — Get ONVIF capabilities
+- `get_device_information` — Get model, firmware version, serial
+- `get_dns` — Retrieve DNS configuration
+- `get_network_interfaces` — Get interface info: MAC, IP, DHCP
+- `get_system_date_and_time` — Read current device time
+- `get_system_info` — Get system info (model, vendor)
+- `get_system_logs` — Get system/access logs (`--logtype=System|Access`)
+- `gethostname` — Get device hostname
+- `reboot` — Reboot the camera
+- `reset_password` — Reset ONVIF password
+- `set_dns` — Set DNS configuration
+- `set_network_interfaces` — Configure detailed network interface parameters
+- `set_ntp` — Set NTP server
+- `set_static_ip` — Assign static IP *(shim via SetNetworkInterfaces)*
+- `setdatetime` — Set local time and timezone dynamically
+- `sethostname` — Set device hostname
+
+### [Events / Detection]
+- `get_event_properties` — Get ONVIF event capabilities
+- `get_motion_detection` — Read motion detection settings
+- `set_motion_detection` — Enable/disable motion detection
+- `subscribe_events` — Subscribe to ONVIF events
+
+### Aliases (kept for backward compatibility)
+- `configurations` → `get_configurations`
+- `preset` → `goto`
+- `presets` → `get_presets`
+- `get_static_ip` → `get_network_interfaces`
+
 
 ## 📚 Examples
+
+### Discovery-first quick start (recommended)
+
+```bash
+# 0) Discover endpoints
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --action=get_services --debug
+
+# 1) Get profiles (prefers Media2)
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --action=get_profiles --debug
+```
+
 
 Assume script is located at `/home/onvif/onvif_control.js`
 
@@ -583,108 +562,3 @@ MIT or similar – free to use, modify, distribute.
 
 Happy scripting 🎉  
 This script was built for developers, integrators, and automation engineers using open, raw SOAP calls – full control, no dependencies!
-
-
----
-
-## 🧭 Actions (grouped & alphabetically sorted) — v1.1.7 view
-
-### [Discovery]
-- `get_services` — Discover XAddr endpoints (Media v2/v1, PTZ)
-
-### [PTZ]
-- `absolutemove` — Move to absolute PT coordinates
-- `configoptions` — Get PTZ configuration options
-- `get_configurations` — List PTZ configurations
-- `get_nodes` — List PTZ nodes
-- `get_presets` — List PTZ presets (tokens & names)
-- `goto` — Go to preset by **PresetToken**
-- `move` — Continuous pan/tilt for `--time` seconds
-- `relativemove` — Relative PT step
-- `removepreset` — Delete PTZ preset by token
-- `setpreset` — Create a PTZ preset (returns token)
-- `status` — Get PTZ status
-- `stop` — Stop PT and/or zoom
-- `zoom` — Continuous zoom for `--time` seconds
-
-### [Media]
-- `get_profiles` — List media profiles (**prefers Media v2**, fallback to v1)
-- `get_snapshot_uri` — Get JPEG snapshot URL
-- `get_stream_uri` — Get RTSP stream URL
-- `get_video_encoder_configuration` — Read current video encoder settings
-- `set_video_encoder_configuration` — Change video encoder settings
-
-### [Device / Network]
-- `add_user` — Create ONVIF user
-- `delete_user` — Delete ONVIF user
-- `enable_dhcp` — Enable DHCP (IPv4) *(shim via SetNetworkInterfaces)*
-- `factoryreset` — Factory reset the device
-- `get_capabilities` — Get ONVIF capabilities
-- `get_device_information` — Get model, firmware version, serial
-- `get_dns` — Retrieve DNS configuration
-- `get_network_interfaces` — Get interface info: MAC, IP, DHCP
-- `get_system_date_and_time` — Read current device time
-- `get_system_info` — Get system info (model, vendor)
-- `get_system_logs` — Get system/access logs (`--logtype=System|Access`)
-- `gethostname` — Get device hostname
-- `reboot` — Reboot the camera
-- `reset_password` — Reset ONVIF password
-- `set_dns` — Set DNS configuration
-- `set_network_interfaces` — Configure detailed network interface parameters
-- `set_ntp` — Set NTP server
-- `set_static_ip` — Assign static IP *(shim via SetNetworkInterfaces)*
-- `setdatetime` — Set local time and timezone dynamically
-- `sethostname` — Set device hostname
-
-### [Events / Detection]
-- `get_event_properties` — Get ONVIF event capabilities
-- `get_motion_detection` — Read motion detection settings
-- `set_motion_detection` — Enable/disable motion detection
-- `subscribe_events` — Subscribe to ONVIF events
-
-### Aliases (kept for backward compatibility)
-- `configurations` → `get_configurations`
-- `preset` → `goto`
-- `presets` → `get_presets`
-- `get_static_ip` → `get_network_interfaces`
-
-
----
-
-## 🚀 Discovery-first quick start (recommended for v1.1.7)
-
-```bash
-# 0) Discover endpoints
-node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --action=get_services --debug
-
-# 1) Get profiles (prefers Media2)
-node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --action=get_profiles --debug
-
-# 2) Presets
-node onvif_control.js --action=get_presets --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --token=Profile_1
-node onvif_control.js --action=setpreset    --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --token=Profile_1 --presetname=Home
-node onvif_control.js --action=goto         --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --token=Profile_1 --preset=<PRESET_TOKEN>
-```
-
-
----
-
-## 🧾 Changelog (1.1.6 → 1.1.7)
-- Added `get_services` discovery (Device→GetServices) to find Media2/Media1/PTZ XAddrs
-- `get_profiles` now uses **Media** (v2 preferred, v1 fallback) — not Device
-- PTZ actions route to discovered **PTZ XAddr**
-- WSSE header improved (`wsse:`/`wsu:` prefixes)
-- Added missing `xmlns:tt` to some Device requests; improved `SetDNS`/`SetNTP` payloads
-- Help reorganized (grouped, alphabetized); **aliases preserved**
-- No new dependencies; fully **backward compatible**
-
-## 🔔 What’s New in 1.1.7 (kept fully backward-compatible with 1.1.6)
-
-- **Discovery step (`get_services`)** — Device→GetServices to discover **XAddr** for **Media v2/v1** and **PTZ** (fixes `ActionNotSupported`).
-- **Media-first `get_profiles`** — Calls Media (prefers **ver20**, falls back to **ver10**) instead of Device.
-- **PTZ routing** — All PTZ calls (presets/move/goto/…) use the discovered **PTZ XAddr**.
-- **WS-Security hardened** — Explicit `wsse:` / `wsu:` namespaces for better firmware compatibility.
-- **XML corrections** — Added missing `xmlns:tt` where needed; improved `SetDNS` / `SetNTP` payloads.
-- **Help reorganized** — Actions grouped & alphabetically sorted; **aliases preserved** (no breaking changes).
-- **Dependencies unchanged** — Still only `minimist` and `xml2js` + Node core modules.
-
