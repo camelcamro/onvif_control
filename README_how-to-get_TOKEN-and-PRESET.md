@@ -1,149 +1,163 @@
+# ONVIF 101 — Getting your Profile **Token** & **Preset** list (v1.1.7)
 
-# ONVIF 101 – Getting Your Profile Token and Preset List  
-*A beginner‑friendly, copy‑&‑paste guide*
-
----
-
-## Why you even need a “Profile Token”
-
-When an ONVIF‑compatible camera (or NVR) streams video it can expose **multiple “media profiles”** – e.g.
-
-* **Main Stream** – full resolution, high bit‑rate  
-* **Sub Stream** – low resolution for mobile / AI analysis  
-* **JPEG Snapshot** – still image only
-
-Internally ONVIF identifies each profile with a **`token`** string that never changes, while the human‑readable name can be edited in the web UI.  
-Whenever you call a PTZ, snapshot or encoder command you must specify **which profile** – that’s why most tools ask for a *ProfileToken*.
+*Copy‑&‑paste guide, updated for ANNKE/Hikvision/OEM devices that expose Media/PTZ on separate XAddr endpoints.*
 
 ---
 
-## What are “Presets”?
+## Why you need a **ProfileToken** (and how presets relate)
 
-A PTZ‑preset stores pan/tilt/zoom coordinates under a short name (“FrontDoor”, „Preset 001“…).  
-Tokens and names work exactly like for profiles:
-
-* **Token** → fixed ID, required when you send a `goto` command  
-* **Name** → label you can change in the camera UI
+- A camera can expose multiple **media profiles** (main/sub, JPEG snapshot, etc.). Each profile has a **ProfileToken** (stable ID) and an optional **name/label** (editable).
+- PTZ commands are profile‑scoped. That’s why most tools need a **`--token`** (the **ProfileToken**).
+- **Presets** store PTZ coordinates and also have **PresetTokens** (stable IDs) and **names** (labels). *Use tokens for control commands; names are just human readable.*
 
 ---
 
-## Prerequisites
+## Quick prerequisites (especially for Hik/ANNKE/OEM)
 
-1. **Node JS** ≥ 14  
-2. This repository cloned (the script lives in `onvif_control.js`).  
-3. Camera IP & ONVIF port (often 80, 8080 or 8899).  
-4. Login **only** if your camera enforces authentication; otherwise you can omit `--user / --pass`.
+1) **Enable ONVIF** in the camera UI.  
+2) Create a **dedicated ONVIF user** (some firmwares separate this from the web admin user).  
+3) Keep **time sync** within **±5 minutes** between client and camera (required for WS‑UsernameToken/PasswordDigest).  
+4) Know the ONVIF **port** (often `80`, `8080`, or vendor‑specific).
+
+> ANNKE I81EM / NCPT500 and many Hikvision OEMs expose **Media v2** at `/onvif/Media2`, **Media v1** at `/onvif/Media`, and **PTZ** at `/onvif/PTZ`. Don’t call `GetProfiles` on the **Device** service — it will fault with `ActionNotSupported`.
 
 ---
 
-## 1 – Discover your Profile Tokens
-
-### 1‑a) Full verbose listing
+## Step 0 — **Discover** the correct XAddr endpoints (NEW in v1.1.7)
 
 ```bash
-node onvif_control.js \
-  --ip=192.168.1.100 --port=8080 \
-  --user=admin --pass=admin \
-  --action=get_profiles --debug
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX \
+  --action=get_services --debug
+```
+**Expected output (JSON):**
+```json
+{
+  "media1": "http://192.168.1.36/onvif/Media",
+  "media2": "http://192.168.1.36/onvif/Media2",
+  "ptz":    "http://192.168.1.36/onvif/PTZ"
+}
+```
+- The tool will later **prefer `media2`** (Media v2). If absent, it **falls back to `media1`** (Media v1).
+
+---
+
+## Step 1 — Get **ProfileTokens**
+
+### A) Clean JSON output (default in v1.1.7)
+```bash
+node onvif_control.js --ip=192.168.1.36 --port=80 \
+  --user=admin --pass=XXXXX --action=get_profiles
+```
+Example:
+```json
+{
+  "mediaXAddr": "http://192.168.1.36/onvif/Media2",
+  "mediaVersion": "ver20",
+  "profileTokens": ["Profile_1","Profile_2"]
+}
+```
+**Just the tokens (with jq):**
+```bash
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX \
+  --action=get_profiles | jq -r '.profileTokens[]'
 ```
 
-*What you see (excerpt)*
+**Without jq (POSIX grep/cut):**
+```bash
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX \
+  --action=get_profiles | grep -oE '"profileTokens":\s*\[[^]]*\]' | \
+  sed -E 's/.*\[(.*)\].*/\1/' | tr -d '"' | tr ',' '\n' | sed '/^\s*$/d'
+```
 
+### B) Raw XML view (for debugging)
+```bash
+node onvif_control.js --ip=192.168.1.36 --port=80 \
+  --user=admin --pass=XXXXX --action=get_profiles --debug
+```
+Look for elements like:
 ```xml
-<tmedia:Profiles token="MainStreamProfileToken">
+<tt:Profile token="Profile_1">
   <tt:Name>MainStream</tt:Name>
-  …
-</tmedia:Profiles>
-
-<tmedia:Profiles token="SubStreamProfileToken">
-  <tt:Name>SubStream</tt:Name>
-  …
-</tmedia:Profiles>
+</tt:Profile>
 ```
 
-### 1‑b) Quick “just the tokens please”  
-*(Copy–paste ready)*
-
-```bash
-node onvif_control.js --ip=192.168.1.100 --action=get_profiles | \
-  grep -o 'token="[^"]*"' | cut -d'"' -f2
-```
-
-Output:
-
-```
-MainStreamProfileToken
-SubStreamProfileToken
-```
+> **If you see `ActionNotSupported`** here, you hit **Device** instead of **Media** — run `get_services` and retry; v1.1.7 routes to Media automatically.
 
 ---
 
-## 2 – List presets for one profile
+## Step 2 — List **Presets** (per profile)
 
-1. Pick the **profile token** you need (e.g. `MainStreamProfileToken`).  
-2. Run:
-
+Choose the **ProfileToken** (e.g. `Profile_1`) and run:
 ```bash
-node onvif_control.js --ip=192.168.1.100 \
-  --action=get_presets --token=MainStreamProfileToken --debug
+node onvif_control.js --ip=192.168.1.36 --port=80 \
+  --user=admin --pass=XXXXX --action=get_presets --token=Profile_1
+```
+Example JSON (tool output may vary by vendor):
+```json
+{ "presets": [ {"token":"Preset001","name":"Entrance"},
+               {"token":"Preset002","name":"Carport"} ] }
 ```
 
-Example response:
+**Only tokens + names (jq):**
+```bash
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX \
+  --action=get_presets --token=Profile_1 | jq -r '.presets[] | "\(.token)\t\(.name)"'
+```
 
+**Without jq (grep/sed):**
+```bash
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX \
+  --action=get_presets --token=Profile_1 | \
+  grep -E '"token"|"name"' | tr -d '",' | awk '{print $2}' | paste - -
+# token  name
+# Preset001  Entrance
+# Preset002  Carport
+```
+
+**Raw XML (debug mode):**
+```bash
+node onvif_control.js --ip=192.168.1.36 --port=80 \
+  --user=admin --pass=XXXXX --action=get_presets --token=Profile_1 --debug
+```
+Look for:
 ```xml
-<tptz:Preset token="Preset001">
-  <tt:Name>Entrance</tt:Name>
-</tptz:Preset>
-<tptz:Preset token="Preset002">
-  <tt:Name>Carport</tt:Name>
-</tptz:Preset>
-```
-
-### Short version – one line, token + name
-
-```bash
-node onvif_control.js --ip=192.168.1.100 \
-  --action=get_presets --token=MainStreamProfileToken | \
-  grep -E 'tptz:Preset token|tt:Name' | sed 'N;s/\n/ /'
-```
-
-Output:
-
-```
-<tptz:Preset token="Preset001">  <tt:Name>Entrance</tt:Name>
-<tptz:Preset token="Preset002">  <tt:Name>Carport</tt:Name>
+<tptz:Preset token="Preset001"><tt:Name>Entrance</tt:Name></tptz:Preset>
 ```
 
 ---
 
-## 3 – Using the results
+## Step 3 — Use the tokens
 
 | Task | Command |
-|------|---------|
-| Move to a preset | `node onvif_control.js --action=goto --token=MainStreamProfileToken --preset=Preset001` |
-| Save current PTZ position as preset 003 | `node onvif_control.js --action=setpreset --token=MainStreamProfileToken --presetname="Gate"` |
-| Delete preset 002 | `node onvif_control.js --action=removepreset --token=MainStreamProfileToken --preset=Preset002` |
+|------|--------|
+| **Go to preset** | `node onvif_control.js --action=goto --token=Profile_1 --preset=Preset001 --ip=... --port=... --user=... --pass=...` |
+| **Create preset** | `node onvif_control.js --action=setpreset --token=Profile_1 --presetname="Home" --ip=... --port=... --user=... --pass=...` |
+| **Delete preset** | `node onvif_control.js --action=removepreset --token=Profile_1 --preset=Preset001 --ip=... --port=... --user=... --pass=...` |
+| **Continuous move 2s** | `node onvif_control.js --action=move --token=Profile_1 --pan=0.4 --tilt=0.0 --time=2 --ip=... --port=... --user=... --pass=...` |
+
+> **Note for ANNKE I81EM / NCPT500:** PT‑only (no optical zoom). ONVIF `Zoom` won’t change optics on this model.
 
 ---
 
-## FAQ & Troubleshooting
+## Troubleshooting (targets Hikvision/ANNKE/OEM specifics)
 
-| Problem | Fix |
-|---------|-----|
-| `Unauthorized` / 401 | Provide `--user` and `--pass`. |
-| Empty preset list | Some cameras store presets *per profile*. Make sure you queried the right token. |
-| `NoToken` error | The profile token you passed does not exist on this device. |
-| Which ONVIF port? | Popular defaults: 80 (HI3516), 8080 (XM), 8899 (Dahua). Check the web UI or ONVIF Device Manager. |
-| Discover IP/Port | Use ONVIF‑DM on Windows/Linux or the “Discover” feature in tinyCam / VLC. |
-
----
-
-## Helpful tools
-
-* **ONVIF Device Manager** (Windows/Linux, free) – GUI that lists tokens & presets.  
-* **VLC Media Player** – can open `rtsp://<ip>/` once you know the profile path.  
-* **nmap –sV** – finds ONVIF ports if you’re unsure.
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `ActionNotSupported` or `InvalidOperation` on `GetProfiles` | Called **Device** instead of **Media** | Run `get_services`, then `get_profiles` (v1.1.7 does this automatically). |
+| `401` / `NotAuthorized` | WS‑UsernameToken digest rejected | Ensure ONVIF user exists and **time is synced ±5 min**. |
+| Preset list is empty | No presets yet / wrong profile | Create one with `setpreset` and use the correct **ProfileToken**. |
+| PT moves don’t work | Wrong **ProfileToken** or mechanical limits | Use a token from `get_profiles`; try `relativemove` away from limits. |
+| Zoom has no effect | PT‑only hardware (no optics) | Normal on NCPT500/I81EM. |
+| Streams OK but ONVIF fails | RTSP accepts basic auth; SOAP needs WSSE | v1.1.7 uses WSSE; verify time sync and ONVIF user. |
 
 ---
 
-> *That’s it!* You now know how to fetch Profile Tokens, list presets, and plug those values back into any ONVIF command.
+## Cheatsheet
+
+- **Discovery:** `get_services` → confirms **Media2/Media1/PTZ** XAddrs.  
+- **Profiles:** `get_profiles` → choose **ProfileToken** for any PTZ/media command.  
+- **Presets:** `get_presets --token=<ProfileToken>` → read **PresetTokens** (+ names).  
+- **Control:** `goto`, `setpreset`, `removepreset`, `move`, `absolutemove`, `relativemove`, `stop`.  
+- **Streams:** `get_stream_uri`, `get_snapshot_uri` (RTSP/JPEG).
+
+That’s it — you can now reliably obtain **ProfileTokens** and **PresetTokens** on **Hikvision/ANNKE** and similar OEM firmwares using the **discovery‑first** flow in v1.1.7.
