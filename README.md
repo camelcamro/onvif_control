@@ -1,8 +1,8 @@
 
 # ONVIF Control Script
 
-**Version:** 1.1.7 (Full Extended)  
-**Build Date:** 2025-08-22 
+**Version:** 1.1.8 (Full Extended)  
+**Build Date:** 2025-08-25 
 **Author:** camel (camelcamro)
 
 ---
