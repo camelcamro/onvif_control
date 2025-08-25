@@ -19,8 +19,8 @@ const args = require('minimist')(process.argv.slice(2), {
   string: ['token', 'k', 'preset', 'e', 'presetname', 'n']
 });
 
-const VERSION = '1.1.7';
-const BUILD_DATE = '2025-08-22';
+const VERSION = '1.1.8';
+const BUILD_DATE = '2025-08-25';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
@@ -299,7 +299,7 @@ async function discoverServices() {
     if (ns.includes('/ver10/media/wsdl')) DISCOVERY.media1 = xa;
     if (ns.includes('/ver20/ptz/wsdl'))   DISCOVERY.ptz    = xa;
   }
-  if (args.debug) console.error('[DISCOVERY]', DISCOVERY);
+  if (args.verbose) console.error('[DISCOVERY]', DISCOVERY);
   return DISCOVERY;
 }
 
@@ -363,12 +363,12 @@ function sendSoap(action, body, cb, svc = 'PTZ') {
           console.error(`RESPONSE for ${action}:\n${xml}\n`);
           if (args.log) logMessage(`SOAP response for ${action}: ${xml}`);
         } else {
-          xml2js.parseString(xml, { explicitArray: false }, (err, result) => {
+          xml2js.parseString(xml, { explicitArray:false, tagNameProcessors:[xml2js.processors.stripPrefix], attrNameProcessors:[xml2js.processors.stripPrefix] }, (err, result) => {
             if (err) {
               console.error('[ERROR] Failed to parse XML:', err.message);
             } else {
               try {
-                const body = result['s:Envelope']['s:Body'];
+                const body = (result.Envelope && result.Envelope.Body) || result.Body || result;
                 const actionKey = Object.keys(body)[0];
                 const payload = body[actionKey];
                 console.log('[RESPONSE]', actionKey);
@@ -387,7 +387,8 @@ function sendSoap(action, body, cb, svc = 'PTZ') {
         if (/NoToken|preset token does not exist/i.test(xml)) {
           if (String(action).toLowerCase().includes('gotopreset')) {
             console.log('[AUTO] Preset token not found → requesting GetPresets list…');
-            const bodyPresets = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
+            const bodyPresets = `<tptz:GetPresets\1>
+      <tptz:ProfileToken>${PROFILE_TOKEN}</tptz:ProfileToken></tptz:GetPresets>`;
             return rawSoap(pickUrlForService('PTZ'), `${nsForService('PTZ')}/GetPresets`, `<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">${wsse}<s:Body>${bodyPresets}</s:Body></s:Envelope>`)
               .then(async () => { await sleep(WAKEUP_SLEEP_MS); console.log('[AUTO] Retrying original goto command…'); return sendSoap(action, body, cb, 'PTZ'); });
           }
@@ -416,7 +417,8 @@ function sendSoap(action, body, cb, svc = 'PTZ') {
 
 async function wakeupSimple(cb) {
   if (args.verbose) console.log('[WAKEUP_SIMPLE] Sending GetPresets...');
-  const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
+  const body = `<tptz:GetPresets\1>
+      <tptz:ProfileToken>${PROFILE_TOKEN}</tptz:ProfileToken></tptz:GetPresets>`;
   sendSoap('GetPresets', body, async () => {
     await sleep(WAKEUP_SLEEP_MS);
     cb && cb();
@@ -434,7 +436,8 @@ function wakeupSequence(cb) {
       await sleep(WAKEUP_SLEEP_MS);
       steps[2]();
     }, 'PTZ'),
-    () => sendSoap('GetPresets', `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`, async () => {
+    () => sendSoap('GetPresets', `<tptz:GetPresets\1>
+      <tptz:ProfileToken>${PROFILE_TOKEN}</tptz:ProfileToken></tptz:GetPresets>`, async () => {
       await sleep(WAKEUP_SLEEP_MS);
       cb && cb();
     }, 'PTZ')
@@ -506,8 +509,8 @@ const PTZ = {
   },
 
   presets() {
-    const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
-      <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
+    const body = `<tptz:GetPresets\1>
+      <tptz:ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GetPresets>`;
     sendSoap('GetPresets', body, null, 'PTZ');
   },
