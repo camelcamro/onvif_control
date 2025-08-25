@@ -19,7 +19,7 @@ const args = require('minimist')(process.argv.slice(2), {
   string: ['token', 'k', 'preset', 'e', 'presetname', 'n']
 });
 
-const VERSION = '1.1.8';
+const VERSION = '1.1.9';
 const BUILD_DATE = '2025-08-25';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
