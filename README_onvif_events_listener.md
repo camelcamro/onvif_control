@@ -182,7 +182,7 @@ XML
 
 ---
 
-### 2) `onvif_control.<version>.js` (≥ 1.1.9 / 1.1.9a)
+### 2) `onvif_control.<version>.js` (≥ 1.1.9)
 
 **Common options:**
 - `--ip` (required) – camera IP.
@@ -191,7 +191,7 @@ XML
 - `--verbose`, `--debug` – print request/response details (with WS‑Security username token; passwords are logged as digests, not plain text).
 - `--help` – show usage.
 
-> If your filename differs (e.g. `onvif_control.1.1.9a.js`), just adapt the command paths.
+> If your filename differs (e.g. `onvif_control.js`), just adapt the command paths.
 
 #### **Action: `subscribe_events`**
 
@@ -237,7 +237,7 @@ node onvif_control.js \
 Extend a valid subscription’s lifetime (push or pull). You need the **subscription URL** returned by `subscribe_events`.
 
 ```bash
-node onvif_control.1.1.9a.js \
+node onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=renew_subscription \
@@ -256,7 +256,7 @@ The response includes the new `TerminationTime` (UTC).
 Cleanly remove a subscription:
 
 ```bash
-node onvif_control.1.1.9a.js \
+node onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=unsubscribe \
@@ -359,7 +359,7 @@ node /home/onvif/onvif_control.js \
 
 **Renew an existing subscription (add 10 min):**
 ```bash
-node /home/onvif/onvif_control.1.1.9a.js \
+node /home/onvif/onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=renew_subscription \
@@ -370,7 +370,7 @@ node /home/onvif/onvif_control.1.1.9a.js \
 
 **Unsubscribe (cleanup):**
 ```bash
-node /home/onvif/onvif_control.1.1.9a.js \
+node /home/onvif/onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=unsubscribe \
