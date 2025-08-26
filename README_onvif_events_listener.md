@@ -1,469 +1,895 @@
-# ONVIF Event Listening – End‑to‑End Guide (Push mode + Listener)
+# ONVIF Control Script
 
-This guide shows how to receive ONVIF Events from a camera by **subscribing in push mode** and running a small **HTTP listener** that logs the incoming SOAP notifications.
-
-It’s written for beginners and power users alike, with copy‑pasteable commands and plenty of troubleshooting notes.
-
----
-
-## Components in this setup
-
-- **`onvif_control_event_listener.js`** (v1.0.5) – a tiny Node.js HTTP server that:
-  - Listens for ONVIF `Notify` POSTs (SOAP/XML).
-  - Prints events to the console (with timestamps).
-  - Appends full raw payloads to a log file (with timestamps) and does simple log rotation at ~20 MB.
-  - CLI flags: `--port`, `--path`, `--outfile`, `--verbose`, `--debug`, `--help`.
-
-- **`onvif_control.<version>.js`** (≥ v1.1.9) – a command‑line tool that talks to your camera’s ONVIF services:
-  - `subscribe_events` (push & pull; push is recommended here).
-  - `renew_subscription` (extend subscription lifetime).
-  - `unsubscribe` (cleanly remove a subscription).
-  - Optional `--auto_renew` loop during `subscribe_events` to keep a push subscription alive.
-
-> **Note:** Some cameras support only push (HTTP delivery), some only pull (PullPoint), and some both. If the camera rejects pull, use push (as in this guide).
+**Version:** 1.1.9 (Full Extended)
+**Build Date:** 2025-08-26 
+**Author:** camel (camelcamro)
 
 ---
 
-## Prerequisites
+## 📦 Motivation & Inspiration 
+As i needed in home assistant to execute a **command line script (CLI) for onvif PTZ**
+And i wanted to use full PTZ features to delete, set, goto presets and to be more flexible and home assistant "onvif ptz" is very limited on PTZ features.
+So, i created this project.
 
-- **Node.js** installed on the machine that runs the tools (Node 14+ recommended).
-- Your **camera IP/port** and **ONVIF credentials** (username/password).
-- A machine (the “listener host”) with an IP reachable by the camera, e.g. `172.20.1.103`.
-- **Firewall/NAT** allows camera → listener HTTP POST to the chosen `--port` (default 9000).
-- **Time sync**: keep both camera and listener system time correct (NTP). ONVIF often reports UTC (`…Z`) while your local console shows local time. That’s normal.
+## 📦 Features
+
+- Fully scriptable & automatable via CLI
+- Full ONVIF PTZ support via raw SOAP HTTP requests
+- WS-Security with Digest Authentication
+- Continuous Move, Absolute/Relative Move
+- Zoom in/out, Preset Save, Goto, Delete
+- PTZ Status, Configuration Options
+- Detailed logging (console + system log)
+- Dry run & verbose/debug modes for development
+- Standalone – does **not** require `onvif-cli` or any ONVIF SDK
 
 ---
 
-## Quick Start (TL;DR)
+## 📁 Installation Guide
 
-### 1) Start the listener (in its own terminal)
 
-```bash
-node /home/onvif/onvif_control_event_listener.js \
-  --port=9000 \
-  --path=/onvif_hook \
-  --outfile=/tmp/onvif_control_listener.txt \
-  --verbose --debug
-```
+- Full ONVIF device control (reboot, factory reset, set time)
+- Stream & snapshot URI fetch
+- Device information: hostname, capabilities, system logs
+- Video encoder configuration get/set
+- User management (get/add/delete)
+- Network and DNS management (IP/DHCP/DNS)
+- Motion detection, NTP and event subscription features
 
-You should see something like:
 
-```
-2025-08-26 09:43:40 - [INFO] onvif_control_event_listener v1.0.5 listening on 0.0.0.0:9000/onvif_hook
-2025-08-26 09:43:40 - [INFO] writing to: /tmp/onvif_control_listener.txt (rotate at 20 MB)
-2025-08-26 09:43:40 - [INFO] debug enabled
-```
+### ✅ Requirements
 
-### 2) Subscribe the camera to push events (in another terminal)
-
-```bash
-node /home/onvif/onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=subscribe_events \
-  --mode=push \
-  --termination=PT300S \
-  --push_url=http://172.20.1.103:9000/onvif_hook \
-  --verbose --debug
-```
-
-If the camera accepts, you’ll get a `SubscriptionReference` URL and a `TerminationTime` (UTC).
-
-**Optional:** keep the subscription alive automatically (runs in a loop and renews just before expiry):
+- **Node.js** (>= 18.x)  
+- **npm**  
+- **Network access** to ONVIF-compatible camera  
+- **Linux with logger** command (for system log support)
+- **minimist** installed in same directy as where the *onvif_controls.js* file is located (see section: Setup)
+- **xml2js** installed in same directy as where the *onvif_controls.js* file is located (see section: Setup)
+ 
+### 🧰 Install on a Raspberry Pi (Raspbian/Debian)
 
 ```bash
-node /home/onvif/onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=subscribe_events \
-  --mode=push \
-  --termination=PT300S \
-  --auto_renew \
-  --push_url=http://172.20.1.103:9000/onvif_hook \
-  --verbose --debug
+sudo apt update && sudo apt install -y nodejs npm net-tools curl logger
+sudo npm install -g minimist
 ```
 
-### 3) Verify the listener receives events
-
-- Trigger motion/events on the camera (walk in front of it or set motion sensitivity high).
-- Watch the listener terminal; with `--debug` you’ll see headers and **full raw SOAP body** plus “event written → …”.
-- The file `/tmp/onvif_control_listener.txt` will contain the raw XML payloads prefixed with timestamps.
-
-Example console output when an event arrives:
-
-```
-2025-08-26 09:54:09 - [VERBOSE] event written → /tmp/onvif_control_listener.txt
-2025-08-26 09:54:09 - [DEBUG] request from 172.20.1.172 → POST /onvif_hook
-2025-08-26 09:54:09 - [DEBUG] headers: {"host":"172.20.1.103:9000","user-agent":"gSOAP/2.8", ...}
-2025-08-26 09:54:09 - [DEBUG] raw body:
-<?xml version="1.0" encoding="UTF-8"?>
-<SOAP-ENV:Envelope ...>
-  <SOAP-ENV:Body>
-    <wsnt:Notify> ... </wsnt:Notify>
-  </SOAP-ENV:Body>
-</SOAP-ENV:Envelope>
-2025-08-26 09:54:09 - [DEBUG] replied 200 OK to 172.20.1.172
+> Optional debugging tools:
+```bash
+sudo apt install wireshark
 ```
 
 ---
 
-## Understanding the data flow
+## ⚙️ Setup
 
-```
-+-----------+       Subscribe (push)       +----------------------------+
-|  Client   | ---------------------------> |  Camera (ONVIF Events svc) |
-| onvif_... |                              +----------------------------+
-| control   |                                     |
-| (CLI)     |                                     | HTTP POST wsnt:Notify
-+-----------+                                     v
-                                          +-----------------------------+
-                                          | Listener (HTTP server)      |
-                                          | onvif_control_event_listener|
-                                          | writes to log file          |
-                                          +-----------------------------+
-```
+download *onvif_control.js* to your host
+(note: If needed install "node" and "minimist" (needs to be installed also in the same folder as script gfile will be running)
+(see "Install" sections)
 
-- The CLI performs `Subscribe` against the camera’s **Events XAddr**.
-- The camera stores a **Subscription** (with an expiration time).
-- While the subscription is valid, the **camera pushes** event notifications (SOAP/XML `wsnt:Notify`) to the listener URL.
-- You can **renew** to extend the expiration, or **unsubscribe** to clean up.
+1. Place `onvif_control.js` in eg: `/home/onvif/`
+2. Make sure the script is executable:
 
----
-
-## CLI Reference
-
-### 1) `onvif_control_event_listener.js`
-
-**Usage:**
 ```bash
-node onvif_control_event_listener.js [--port <int>] [--path <string>] \
-  [--outfile <path>] [--verbose] [--debug] [--help]
+chmod +x /home/onvif/onvif_control.js
 ```
 
-**Options:**
-- `--port` (default: `9000`) – TCP port to listen on.
-- `--path` (default: `/onvif_hook`) – HTTP path the camera will POST to.
-- `--outfile` (default: `/tmp/onvif_control_listener.txt`) – file where raw events are appended.  
-  The listener rotates the file at ~20 MB (keeps one `*.1` backup).
-- `--verbose` – print “event written → …” messages.
-- `--debug` – print request origin, headers, **full raw body**, and reply status to console.
-- `--help` – show usage.
+3. Install minimist also in the same folder as your script is located:
 
-**Notes:**
-- The listener binds to `0.0.0.0`. Ensure firewalls allow inbound traffic on `--port`.
-- Timestamps on console/file are local time of the listener machine; XML may contain UTC timestamps from the camera.
-
-**Testing without a camera:**
 ```bash
-curl -s -X POST "http://127.0.0.1:9000/onvif_hook" \
-  -H "Content-Type: application/soap+xml" \
-  --data-binary @- <<'XML'
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
-            xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2"
-            xmlns:tt="http://www.onvif.org/ver10/schema">
-  <s:Body>
-    <wsnt:Notify>
-      <wsnt:NotificationMessage>
-        <wsnt:Topic>tns1:RuleEngine/CellMotionDetector/Motion</wsnt:Topic>
-        <wsnt:Message>
-          <tt:Message UtcTime="2025-08-26T00:00:00Z">
-            <tt:Data>
-              <tt:SimpleItem Name="Motion" Value="true"/>
-              <tt:SimpleItem Name="Window" Value="0"/>
-            </tt:Data>
-          </tt:Message>
-        </wsnt:Message>
-      </wsnt:NotificationMessage>
-    </wsnt:Notify>
-  </s:Body>
-</s:Envelope>
-XML
+cd /home/onvif
+sudo npm install -g minimist
+```
+
+4. Install minimist also in the same folder as your script is located:
+
+```bash
+cd /home/onvif
+sudo npm install xml2js
+```
+
+5. Invoke script using `node`:
+
+```bash
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 ```
 
 ---
 
-### 2) `onvif_control.<version>.js` (≥ 1.1.9)
+## 🚀 Basic Usage
 
-**Common options:**
-- `--ip` (required) – camera IP.
-- `--port` (default: `80` or as needed) – ONVIF service port (e.g. `8080` on some devices).
-- `--user`, `--pass` – ONVIF credentials.
-- `--verbose`, `--debug` – print request/response details (with WS‑Security username token; passwords are logged as digests, not plain text).
-- `--help` – show usage.
+### Mandatory Parameters
+| Option     | Alias | Description                                      |
+|------------|-------|--------------------------------------------------|
+| `--action` |       | Action to perform (`move`, `zoom`, `goto`, etc.) |
+| `--ip`     | `-i`  | IP of camera                                     |
+| `--port`   |       | Port of ONVIF service (e.g. 8080)                |
 
-> If your filename differs (e.g. `onvif_control.js`), just adapt the command paths.
+## 🔧 Supported Actions
 
-#### **Action: `subscribe_events`**
+### [Discovery]
+- `get_services` — Discover XAddr endpoints (Media v2/v1, PTZ)
 
-Subscribe in **push** mode:
+### [PTZ]
+- `absolutemove` — Move to absolute PT coordinates
+- `configoptions` — Get PTZ configuration options
+- `get_configurations` — List PTZ configurations
+- `get_nodes` — List PTZ nodes
+- `get_presets` — List PTZ presets (tokens & names)
+- `goto` — Go to preset by **PresetToken**
+- `move` — Continuous pan/tilt for `--time` seconds
+- `relativemove` — Relative PT step
+- `removepreset` — Delete PTZ preset by token
+- `setpreset` — Create a PTZ preset (returns token)
+- `status` — Get PTZ status
+- `stop` — Stop PT and/or zoom
+- `zoom` — Continuous zoom for `--time` seconds
+
+### [Media]
+- `get_profiles` — List media profiles (**prefers Media v2**, fallback to v1)
+- `get_snapshot_uri` — Get JPEG snapshot URL
+- `get_stream_uri` — Get RTSP stream URL
+- `get_video_encoder_configuration` — Read current video encoder settings
+- `set_video_encoder_configuration` — Change video encoder settings
+
+### [Device / Network]
+- `add_user` — Create ONVIF user
+- `delete_user` — Delete ONVIF user
+- `enable_dhcp` — Enable DHCP (IPv4) *(shim via SetNetworkInterfaces)*
+- `factoryreset` — Factory reset the device
+- `get_capabilities` — Get ONVIF capabilities
+- `get_device_information` — Get model, firmware version, serial
+- `get_dns` — Retrieve DNS configuration
+- `get_network_interfaces` — Get interface info: MAC, IP, DHCP
+- `get_system_date_and_time` — Read current device time
+- `get_system_info` — Get system info (model, vendor)
+- `get_system_logs` — Get system/access logs (`--logtype=System|Access`)
+- `gethostname` — Get device hostname
+- `reboot` — Reboot the camera
+- `reset_password` — Reset ONVIF password
+- `set_dns` — Set DNS configuration
+- `set_network_interfaces` — Configure detailed network interface parameters
+- `set_ntp` — Set NTP server
+- `set_static_ip` — Assign static IP *(shim via SetNetworkInterfaces)*
+- `setdatetime` — Set local time and timezone dynamically
+- `sethostname` — Set device hostname
+
+### [Events / Detection]
+- `get_event_properties` — Get ONVIF event capabilities
+- `get_motion_detection` — Read motion detection settings
+- `set_motion_detection` — Enable/disable motion detection
+- `subscribe_events` — Subscribe to ONVIF events
+
+### Aliases (kept for backward compatibility)
+- `configurations` → `get_configurations`
+- `preset` → `goto`
+- `presets` → `get_presets`
+- `get_static_ip` → `get_network_interfaces`
+
+
+## 📚 Examples
+
+### Discovery-first quick start (recommended)
+
 ```bash
-node onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=subscribe_events \
-  --mode=push \
-  --push_url=http://172.20.1.103:9000/onvif_hook \
-  --termination=PT300S \
-  --verbose --debug
+# 0) Discover endpoints
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --action=get_services --debug
+
+# 1) Get profiles (prefers Media2)
+node onvif_control.js --ip=192.168.1.36 --port=80 --user=admin --pass=XXXXX --action=get_profiles --debug
 ```
 
-Optional **auto‑renew** (keeps running and periodically renews):
-```bash
-node onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=subscribe_events \
-  --mode=push \
-  --push_url=http://172.20.1.103:9000/onvif_hook \
-  --termination=PT300S \
-  --auto_renew \
-  --verbose --debug
-```
 
-**Parameters (subscribe):**
-- `--mode` = `push` (this guide) or `pull` (PullPoint; only if the camera supports it).
-- `--push_url` – the full listener URL (must match `--port`/`--path` of the listener).
-- `--termination` – requested lifetime (ISO‑8601 duration). Examples:
-  - `PT60S` (60 seconds), `PT300S` (5 minutes), `PT1H` (1 hour).
-  - The camera may ignore very long durations and cap it.
-- `--timeout` – only relevant for **pull mode** (e.g. `PT30S` per pull request).
-- `--message_limit` – only relevant for **pull mode** (max msgs per pull).
-- `--auto_renew` – if provided, the tool sleeps until just before `TerminationTime` and sends `Renew` automatically in a loop.
-
-> Output will include `subscription` (SubscriptionReference URL), `currentTime`, and `terminationTime` in **UTC**.
-
-#### **Action: `renew_subscription`**
-
-Extend a valid subscription’s lifetime (push or pull). You need the **subscription URL** returned by `subscribe_events`.
-
-```bash
-node onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=renew_subscription \
-  --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
-  --termination=PT600S \
-  --verbose --debug
-```
-
-- `--subscription` – the **exact** `SubscriptionReference` URL the camera returned.
-- `--termination` – new requested lifetime (ISO‑8601 duration).
-
-The response includes the new `TerminationTime` (UTC).
-
-#### **Action: `unsubscribe`**
-
-Cleanly remove a subscription:
-
-```bash
-node onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=unsubscribe \
-  --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
-  --verbose --debug
-```
-
-> Unsubscribe is **optional**; most cameras will also drop subscriptions at `TerminationTime`, on reboot, or when they no longer can reach your listener. Still, it’s nice hygiene to clean up explicitly during tests.
+Assume script is located at `/home/onvif/onvif_control.js`
 
 ---
 
-## Time & Timezones
+## 🧪 Movements & Zoom
 
-- **Listener timestamps** (prefix on console and file) are in the listener host’s local time.
-- **Camera timestamps** (`UtcTime="..."` in XML, and `CurrentTime`/`TerminationTime` in `Subscribe`/`Renew` responses) are **UTC** (`...Z` or without zone but UTC assumption).  
-  It’s normal to see a 2‑hour difference if your local time is UTC+02.
-
-To avoid confusion, rely on the **UTC `TerminationTime`** from the camera when deciding when to renew. The `--auto_renew` option handles that automatically.
-
----
-
-## Running as a background service (optional)
-
-### `nohup` + `&`
+### Move Right (1.5s)
 ```bash
-nohup node /home/onvif/onvif_control_event_listener.js \
-  --port=9000 --path=/onvif_hook \
-  --outfile=/tmp/onvif_control_listener.txt --verbose --debug \
-  >/var/log/onvif_listener.out 2>&1 &
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0.5 --tilt=0 --time=1.5
 ```
 
-### `systemd` unit (Linux)
-Create `/etc/systemd/system/onvif-listener.service`:
-```ini
-[Unit]
-Description=ONVIF Event Listener
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStart=/usr/bin/node /home/onvif/onvif_control_event_listener.js --port=9000 --path=/onvif_hook --outfile=/tmp/onvif_control_listener.txt --verbose --debug
-Restart=on-failure
-WorkingDirectory=/home/onvif
-User=onvif
-Group=onvif
-
-[Install]
-WantedBy=multi-user.target
+### Move Left (1.5s)
+```bash
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=-0.5
 ```
 
-Then:
+### Move Up (1.5s)
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now onvif-listener.service
-sudo systemctl status onvif-listener.service
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0 --tilt=0.5
+```
+
+### Move Down (1.5s)
+```bash
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0 --tilt=-0.5
+```
+
+### Zoom In (1.5s)
+```bash
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=0.5 --time=1.5
+```
+
+### Zoom Out (1.5s)
+```bash
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=-0.5 --time=1.5
 ```
 
 ---
 
-## Troubleshooting
+## 🧪 Goto, Save, Delete Preset
+### Save Preset
+```bash
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=setpreset --presetname=Preset005
+```
 
-- **Subscribe (pull) fails:** Many budget cameras don’t implement `CreatePullPointSubscription` or WS‑Notification Pull. Use `--mode=push`.
-- **No events arrive:** Check the listener can be reached from the camera (IP/port/path), firewall rules, and that the camera actually generates events (enable motion detection, etc.).
-- **HTTP 404/405 from listener:** Ensure `--path` matches the `--push_url` path exactly (e.g. `/onvif_hook`). Only `POST` is accepted.
-- **401/403 from camera:** Wrong ONVIF credentials or user doesn’t have event permissions.
-- **`TerminationTime` too short:** Some devices cap it to 60s. Use `--auto_renew` or call `renew_subscription` manually.
-- **Time mismatch:** Camera shows UTC; your console shows local time. That’s expected.
-- **Multiple subscriptions:** Each `subscribe_events` call may create a new subscription (`Idx=…`). If you create many, consider `unsubscribe` to clean up.
-- **NAT / different subnets:** The camera must be able to reach the **listener’s IP**. If you use hostnames, test with raw IP first.
-- **Content‑Type:** Cameras often send `application/soap+xml; charset=utf-8; action="…Notify"`. The listener is permissive, but if you test with `curl`, set `Content-Type: application/soap+xml`.
+### Go to Preset
+```bash
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=goto --preset=Preset005
+```
+
+### Remove Preset
+```bash
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=removepreset --preset=Preset005
+```
 
 ---
 
-## Examples (copy & paste)
-
-**Subscribe (push) for 5 minutes:**
+## 🧪 Status, Configs & Listing
+### List Presets
 ```bash
-node /home/onvif/onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=subscribe_events \
-  --mode=push \
-  --termination=PT300S \
-  --push_url=http://172.20.1.103:9000/onvif_hook \
-  --verbose --debug
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=presets
 ```
 
-**Auto‑renew forever (until Ctrl‑C):**
+### Get PTZ Status
 ```bash
-node /home/onvif/onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=subscribe_events \
-  --mode=push \
-  --termination=PT300S \
-  --auto_renew \
-  --push_url=http://172.20.1.103:9000/onvif_hook \
-  --verbose --debug
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=status
 ```
 
-**Renew an existing subscription (add 10 min):**
+### Get PTZ Config Options
 ```bash
-node /home/onvif/onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=renew_subscription \
-  --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
-  --termination=PT600S \
-  --verbose --debug
+node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=configoptions
 ```
 
-**Unsubscribe (cleanup):**
+---
+
+
+---
+
+## 🧪 Device Control
+
+### Reboot Device
 ```bash
-node /home/onvif/onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=unsubscribe \
-  --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
-  --verbose --debug
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reboot
 ```
 
-**Send a test event to the listener with `curl`:**
+### Factory Reset
 ```bash
-curl -s -X POST "http://172.20.1.103:9000/onvif_hook" \
-  -H "Content-Type: application/soap+xml; charset=utf-8; action=\"http://docs.oasis-open.org/wsn/bw-2/NotificationConsumer/Notify\"" \
-  --data-binary @- <<'XML'
-<?xml version="1.0" encoding="UTF-8"?>
-<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"
-                   xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2"
-                   xmlns:tt="http://www.onvif.org/ver10/schema">
-  <SOAP-ENV:Body>
-    <wsnt:Notify>
-      <wsnt:NotificationMessage>
-        <wsnt:Topic>tns1:RuleEngine/CellMotionDetector/Motion</wsnt:Topic>
-        <wsnt:Message>
-          <tt:Message UtcTime="2025-08-26T09:54:09" PropertyOperation="Changed">
-            <tt:Data>
-              <tt:SimpleItem Name="IsMotion" Value="true"/>
-            </tt:Data>
-          </tt:Message>
-        </wsnt:Message>
-      </wsnt:NotificationMessage>
-    </wsnt:Notify>
-  </SOAP-ENV:Body>
-</SOAP-ENV:Envelope>
-XML
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=factoryreset
 ```
 
-## Pull mode (optional / when supported)
-
-Some cameras implement **WS-Notification Pull** or **CreatePullPointSubscription** instead of HTTP push.
-
-**Subscribe in pull mode:**
+### Set Date and Time
 ```bash
-node /home/onvif/onvif_control.js \
-  --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=XXXXXX \
-  --action=subscribe_events \
-  --mode=pull \
-  --termination=PT120S \
-  --verbose --debug
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=setdatetime
 ```
 
-> Notes:
-> - The current CLI creates the pull subscription; message retrieval is typically done by a separate **PullMessages loop** on your side. The flags `--timeout` and `--message_limit` are reserved for that and may be used by future helpers.
-> - Many budget devices **do not** implement pull. If you see `ActionNotSupported`, stick with **push**.
+---
 
+## 🧪 Stream & Snapshot
 
-
-## Renew & Unsubscribe (housekeeping)
-
-**Renew** (extend lifetime):
+### Get Snapshot URI
 ```bash
-node /home/onvif/onvif_control.js --action=renew_subscription \
-  --ip=172.20.1.172 --port=8080 --user=admin --pass=XXXXXX \
-  --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
-  --termination=PT600S --verbose --debug
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_snapshot_uri
 ```
 
-**Unsubscribe** (clean up):
+### Get Stream URI
 ```bash
-node /home/onvif/onvif_control.js --action=unsubscribe \
-  --ip=172.20.1.172 --port=8080 --user=admin --pass=XXXXXX \
-  --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
-  --verbose --debug
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_stream_uri
 ```
 
-**Auto renew** (hands‑off):
+---
+
+## 🧪 Info & Network
+
+### Get System Info
 ```bash
-node /home/onvif/onvif_control.js --action=subscribe_events \
-  --ip=172.20.1.172 --port=8080 --user=admin --pass=XXXXXX \
-  --mode=push --push_url=http://172.20.1.103:9000/onvif_hook \
-  --termination=PT300S --auto_renew --verbose --debug
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_info
 ```
 
-## Legacy subscribe via Device service (fallback)
-
-Some firmwares only accept event subscriptions via the **Device** service (not the Events XAddr).
-
+### Get Capabilities
 ```bash
-node /home/onvif/onvif_control.js \
-  --ip=172.20.1.172 --port=8080 --user=admin --pass=XXXXXX \
-  --action=subscribe_events_device --verbose --debug
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_capabilities
 ```
 
+### Get/Set Network Interfaces
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_network_interfaces
+```
 
-## Event options quick reference
+---
+
+## 🧪 Users & Security
+
+### Get Users
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_users
+```
+
+### Add User
+```bash
+node onvif_control.js --ip=... --port=... --user=admin --pass=adminpass --action=add_user \
+  --new_username=testuser --new_password=1234 --new_userlevel=User
+```
+
+### Delete User
+```bash
+node onvif_control.js --ip=... --port=... --user=admin --pass=adminpass --action=delete_user \
+  --del_username=testuser
+```
+
+---
+
+## 🧪 DNS / NTP / Logs / Events
+
+### Get System Logs
+```bash
+node onvif_control.js --action=get_system_logs ...
+```
+
+### Set NTP Server
+```bash
+node onvif_control.js --action=set_ntp ...
+```
+
+### Set/Get DNS
+```bash
+node onvif_control.js --action=get_dns
+```
+
+```bash
+node onvif_control.js --action=set_dns
+```
+
+### Subscribe to Events
+```bash
+node onvif_control.js --action=subscribe_events
+```
+## 🔍 Example Calls for Each Action
+
+### get_device_information
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_device_information
+```
+
+### get_profiles
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_profiles
+```
+
+### get_stream_uri
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_stream_uri
+```
+
+### get_snapshot_uri
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_snapshot_uri
+```
+
+### get_video_encoder_configuration
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_video_encoder_configuration
+```
+
+### set_video_encoder_configuration
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_video_encoder_configuration
+```
+
+### get_system_date_and_time
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_date_and_time
+```
+
+### setdatetime
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=setdatetime
+```
+
+### get_capabilities
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_capabilities
+```
+
+### get_system_info
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_info
+```
+
+### get_network_interfaces
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_network_interfaces
+```
+
+### set_network_interfaces
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_network_interfaces
+```
+
+### get_users
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_users
+```
+
+### add_user
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=add_user
+```
+
+### delete_user
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=delete_user
+```
+
+### set_ntp
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_ntp
+```
+
+### get_dns
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_dns
+```
+
+### set_dns
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_dns
+```
+
+### get_event_properties
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_event_properties
+```
+
+### get_motion_detection
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_motion_detection
+```
+
+### set_motion_detection
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_motion_detection
+```
+
+### subscribe_events
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=subscribe_events
+```
+
+### gethostname
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=gethostname
+```
+
+### sethostname
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=sethostname
+```
+
+### set_static_ip
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_static_ip
+```
+
+### enable_dhcp
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=enable_dhcp
+```
+
+### reset_password
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reset_password
+```
+
+### reboot
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reboot
+```
+
+### factoryreset
+```bash
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=factoryreset
+```
+
+## 🧠 Expert & Troubleshooting
+
+### Discovering Tokens and Presets
+
+Use **ONVIF Device Manager** on Windows or Linux to:
+- Identify your camera’s PTZ profile token
+- Test preset positions
+
+**Wireshark** can be used to:
+- Filter ONVIF traffic using: `ip.addr == 172.2.1.194 && tcp.port == 8080`
+- Use "Follow TCP stream" to view raw XML/SOAP
+
+This helps you detect:
+- Which preset names exist (`Preset001` to `Preset256` common)
+- If the profile token is not `MainStreamProfileToken`, update using `--token=...`
+
+Links:
+- ONVIF Device Manager: https://sourceforge.net/projects/onvifdm/
+- Wireshark: https://www.wireshark.org/
+
+---
+
+## 🛡️ Security Note
+This tool uses ONVIF-compliant digest authentication with WS-Security headers (password hashed via SHA1 with nonce and timestamp). No plain password is transmitted.
+
+---
+
+## 🧠  Tips
+
+### 🔍 Determine ProfileToken / Preset Names
+
+1. Use **ONVIF Device Manager** (Windows) or **VLC** to explore services.
+2. Use **Wireshark**:
+   - Start capture on camera IP + port 8080.
+   - Apply filter: `ip.addr==172.20.1.194 && tcp.port==8080`
+   - Use ONVIF tool (e.g., click preset) to generate traffic.
+   - Right-click → Follow TCP stream → Inspect token/preset name.
+
+> Common defaults:
+> - **Token:** `MainStreamProfileToken`
+> - **Presets:** `Preset001`–`Preset256`
+
+---
+
+## 🧾 Notes
+
+- Most generic IP cameras use `Preset001` to `Preset256` and many also using `Preset01` to `Preset99`
+- Be aware, that most generic IP cameras use pre-defined Prests and are used for special comands
+  (eg: "tracking stop", "tracking start", "cruise mode", reset all "Presets to default"). This can't be used for *setpreset* or *removepreset" 
+- If nothing moves, check credentials, token, and presets
+- Ensure your camera supports PTZ and ONVIF over HTTP
+
+---
+
+## 📚 License
+
+MIT or similar – free to use, modify, distribute.
+
+Happy scripting 🎉  
+This script was built for developers, integrators, and automation engineers using open, raw SOAP calls – full control, no dependencies!
+
+
+## 📚 Action Reference (v1.1.9)
+
+Below is a complete list of actions grouped by category, with a short description and a copy‑paste command template.
+
+### [Discovery]
+
+- **`get_services`** — Discover XAddr endpoints (Media v2/v1, PTZ, Events)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_services
+  ```
+
+
+### [PTZ]
+
+- **`absolutemove`** — Move to absolute PT coordinates
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=absolutemove --pan=0.1 --tilt=0.1 --zoom=0.1
+  ```
+
+- **`configoptions`** — Get PTZ configuration options
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=configoptions
+  ```
+
+- **`get_configurations`** — List PTZ configurations
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_configurations
+  ```
+
+- **`get_nodes`** — List PTZ nodes
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_nodes
+  ```
+
+- **`get_presets`** — List PTZ presets (tokens & names)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_presets
+  ```
+
+- **`goto`** — Go to preset by token
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=goto --preset=Preset001
+  ```
+
+- **`move`** — Continuous pan/tilt for --time seconds
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=move --pan=0.5 --tilt=0 --time=1.5
+  ```
+
+- **`relativemove`** — Relative PT step
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=relativemove --pan=0.1 --tilt=0.1 --zoom=0.1
+  ```
+
+- **`removepreset`** — Delete PTZ preset by token
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=removepreset --preset=Preset005
+  ```
+
+- **`setpreset`** — Create a PTZ preset (returns token)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=setpreset --presetname=Preset005
+  ```
+
+- **`status`** — Get PTZ status
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=status
+  ```
+
+- **`stop`** — Stop PT and/or zoom
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=stop
+  ```
+
+- **`zoom`** — Continuous zoom for --time seconds
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=zoom --zoom=0.5 --time=1.5
+  ```
+
+
+### [Media]
+
+- **`get_profiles`** — List media profiles (prefers Media v2)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_profiles
+  ```
+
+- **`get_snapshot_uri`** — Get JPEG snapshot URL
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_snapshot_uri
+  ```
+
+- **`get_stream_uri`** — Get RTSP stream URL
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_stream_uri
+  ```
+
+- **`get_video_encoder_configuration`** — Read current video encoder settings
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_video_encoder_configuration
+  ```
+
+- **`set_video_encoder_configuration`** — Change video encoder settings
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_video_encoder_configuration --resolution=1920x1080 --bitrate=4096 --codec=H264
+  ```
+
+
+### [Device / Network]
+
+- **`add_user`** — Create ONVIF user
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=add_user
+  ```
+
+- **`delete_user`** — Delete ONVIF user
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=delete_user
+  ```
+
+- **`enable_dhcp`** — Enable DHCP (IPv4)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=enable_dhcp
+  ```
+
+- **`factoryreset`** — Factory reset the device
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=factoryreset
+  ```
+
+- **`get_capabilities`** — Get ONVIF capabilities
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_capabilities
+  ```
+
+- **`get_device_information`** — Get model, firmware, serial
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_device_information
+  ```
+
+- **`get_dns`** — Get DNS configuration
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_dns
+  ```
+
+- **`get_users`** — List ONVIF users
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_users
+  ```
+
+- **`get_network_interfaces`** — Get interface info: MAC, IP, DHCP
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_network_interfaces
+  ```
+
+- **`get_system_date_and_time`** — Read current device time
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_date_and_time
+  ```
+
+- **`get_system_info`** — Get system info (model/vendor)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_info
+  ```
+
+- **`get_system_logs`** — Get system/access logs (--logtype=System|Access)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_system_logs
+  ```
+
+- **`gethostname`** — Get device hostname
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=gethostname
+  ```
+
+- **`reboot`** — Reboot the device
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reboot
+  ```
+
+- **`reset_password`** — Reset ONVIF password for a username
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reset_password
+  ```
+
+- **`set_dns`** — Set DNS configuration
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_dns --dns1=1.1.1.1 --dns2=8.8.8.8
+  ```
+
+- **`set_network_interfaces`** — Configure network interface (IPv4)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_network_interfaces --netmask=255.255.255.0 --dhcp=0
+  ```
+
+- **`set_ntp`** — Set NTP server
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_ntp --ntp_server=192.168.1.1
+  ```
+
+- **`set_static_ip`** — Assign static IPv4 (shim of SetNetworkInterfaces)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_static_ip
+  ```
+
+- **`setdatetime`** — Set local time/timezone to current host time
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=setdatetime
+  ```
+
+- **`sethostname`** — Set device hostname
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=sethostname
+  ```
+
+
+### [Events / Detection]
+
+- **`get_event_properties`** — Get ONVIF event capabilities
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_event_properties
+  ```
+
+- **`get_motion_detection`** — Read motion detection settings
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_motion_detection
+  ```
+
+- **`renew_subscription`** — Renew an existing subscription (by Subscription Manager URL)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=renew_subscription --subscription=http://<camera>/onvif/Subscription?Idx=0 --termination=PT600S
+  ```
+
+- **`set_motion_detection`** — Enable/disable motion detection
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_motion_detection
+  ```
+
+- **`subscribe_events`** — Create/Subscribe to ONVIF events subscription (push or pull + auto-fallback to DEVICE on 404/405/timeout)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=subscribe_events --mode=push --push_url=http://<listener>:9000/onvif_hook --termination=PT300S --verbose
+  ```
+
+- **`subscribe_events_device`** — Legacy subscribe via Device service (fallback)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=subscribe_events_device --verbose
+  ```
+
+- **`unsubscribe`** — Cancel an existing subscription (by Subscription Manager URL)
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=unsubscribe --subscription=http://<camera>/onvif/Subscription?Idx=0
+  ```
+
+- **`configurations`** — → get_configurations
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=configurations
+  ```
+
+- **`preset`** — → goto
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=preset
+  ```
+
+- **`presets`** — → get_presets
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=presets
+  ```
+
+- **`get_static_ip`** — → get_network_interfaces
+
+  ```bash
+  node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_static_ip
+  ```
+
+
+
+### Event-specific options
 
 - `--mode <push|pull>           Delivery mode (default: push)`
 - `--push_url <url>             Push: consumer URL (e.g. http://host:9000/onvif_hook)`
@@ -473,32 +899,3 @@ node /home/onvif/onvif_control.js \
 - `--subscription <url>         Subscription Manager URL (for renew_subscription / unsubscribe)`
 - `--auto_renew                 Keep renewing automatically (subscribe_events only)`
 - `--auto_unsubscribe_on_exit   On SIGINT/SIGTERM, auto-unsubscribe (when auto_renew is active)`
-
----
-
-## Security notes
-
-- These tools are for **testing and lab use**. For production, put the listener behind a reverse proxy, add authentication, validate XML strictly, and consider TLS/HTTPS.
-- Keep camera firmware updated; event services on some devices are fragile or vendor‑modified.
-
----
-
-## FAQ
-
-**Q: My camera returns `ter:ActionNotSupported` for `CreatePullPointSubscription`.**  
-A: Use `--mode=push`. Many devices implement push only.
-
-**Q: The camera’s `TerminationTime` is always ~60s.**  
-A: That’s the device’s cap. Use `--auto_renew` or renew manually.
-
-**Q: I see UTC timestamps in responses but local timestamps in the listener.**  
-A: Expected. Camera reports UTC; your console shows local time.
-
-**Q: Do I have to call `unsubscribe`?**  
-A: Not required, but recommended during testing to avoid stale subscriptions.
-
-**Q: Can I subscribe multiple cameras to the same listener?**  
-A: Yes. They’ll all POST to the same `--path`. The log will include the source IP in the console (`request from ...`) and you can separate by content if needed.
-
-
-
