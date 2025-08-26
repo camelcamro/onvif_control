@@ -1,5 +1,26 @@
+#!/usr/bin/env node
 // onvif_control.js
-// ONVIF Control Script - Full SOAP Implementation
+// ONVIF Control Script - Full SOAP Implementation + Events (subscribe/renew/unsubscribe)
+//
+// Version: 1.1.9
+// Build Date: 2025-08-26
+//
+// - Backwards compatible with v1.1.8 actions & flags
+// - New actions: subscribe_events, renew_subscription, unsubscribe
+// - New flags : --mode, --push_url, --termination, --timeout, --message_limit, --subscription, --auto_renew
+//
+// Usage examples (events):
+//   node onvif_control.1.1.9.js --ip=172.20.1.172 --port=8080 --user=admin --pass=*** \
+//     --action=subscribe_events --mode=push --termination=PT300S \
+//     --push_url=http://172.20.1.103:9000/onvif_hook --debug --verbose
+//
+//   node onvif_control.1.1.9.js --action=renew_subscription \
+//     --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=2 \
+//     --user=admin --pass=*** --termination=PT300S --verbose
+//
+//   node onvif_control.1.1.9.js --action=unsubscribe \
+//     --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=2 \
+//     --user=admin --pass=*** --verbose
 
 'use strict';
 
@@ -15,12 +36,15 @@ const args = require('minimist')(process.argv.slice(2), {
     z: 'zoom', p: 'pan', u: 'user', i: 'ip', k: 'token', e: 'preset',
     n: 'presetname', r: 'dry-run', y: 'tilt'
   },
-  // No automatic Number Casting for Token & Presets
-  string: ['token', 'k', 'preset', 'e', 'presetname', 'n']
+  // Keep strings for tokens & new event flags
+  string: [
+    'token','k','preset','e','presetname','n',
+    'push_url','termination','timeout','subscription','eventtype'
+  ]
 });
 
-const VERSION = '1.1.8';
-const BUILD_DATE = '2025-08-25';
+const VERSION = '1.1.9';
+const BUILD_DATE = '2025-08-26';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
@@ -31,9 +55,8 @@ const WAKEUP_SLEEP_MS = 1000;
 // Timeout in milliseconds for SOAP requests
 const SOCKET_TIMEOUT_MS = 5000;
 
-// Discovered service endpoints (filled by GetServices)
-const DISCOVERY = { media1: null, media2: null, ptz: null };
-
+// Discovered service endpoints (filled by GetServices / GetCapabilities)
+const DISCOVERY = { media1: null, media2: null, ptz: null, events: null };
 
 function showHelp() {
   console.log(`
@@ -57,7 +80,7 @@ function showHelp() {
   Actions (grouped & alphabetically sorted):
 
   [Discovery]
-    get_services                 Discover XAddr endpoints (Media v2/v1, PTZ)
+    get_services                 Discover XAddr endpoints (Media v2/v1, PTZ, Events)
 
   [PTZ]
     absolutemove                 Move to absolute PT coordinates
@@ -89,6 +112,7 @@ function showHelp() {
     get_capabilities             Get ONVIF capabilities
     get_device_information       Get model, firmware, serial
     get_dns                      Get DNS configuration
+    get_users                    List ONVIF users
     get_network_interfaces       Get interface info: MAC, IP, DHCP
     get_system_date_and_time     Read current device time
     get_system_info              Get system info (model/vendor)
@@ -106,8 +130,11 @@ function showHelp() {
   [Events / Detection]
     get_event_properties         Get ONVIF event capabilities
     get_motion_detection         Read motion detection settings
+    renew_subscription           Renew an existing subscription (by Subscription Manager URL)
     set_motion_detection         Enable/disable motion detection
-    subscribe_events             Subscribe to ONVIF events
+    subscribe_events             Create/Subscribe to ONVIF events subscription (push or pull + auto-fallback to DEVICE on 404/405/timeout)
+    subscribe_events_device      Legacy subscribe via Device service (fallback)
+    unsubscribe                  Cancel an existing subscription (by Subscription Manager URL)
 
   Aliases (kept for backward compatibility):
     configurations      → get_configurations
@@ -115,14 +142,25 @@ function showHelp() {
     presets             → get_presets
     get_static_ip       → get_network_interfaces
 
-  Optional options:
+  Options specific to Events:
+    --mode <push|pull>           Delivery mode (default: push)
+    --push_url <url>             Push: consumer URL (e.g. http://host:9000/onvif_hook)
+    --termination <dur>          Requested TTL (ISO8601 duration, default: PT60S)
+    --timeout <dur>              Pull: timeout per PullMessages (default: PT30S) [reserved]
+    --message_limit <int>        Pull: max messages per pull (default: 10) [reserved]
+    --subscription <url>         Subscription Manager URL (for renew_subscription / unsubscribe)
+    --auto_renew                 Keep renewing automatically (subscribe_events only)
+    --auto_unsubscribe_on_exit   On SIGINT/SIGTERM, auto-unsubscribe (when auto_renew is active)
+
+  Other optional options (unchanged):
     --bitrate                     Bitrate in kbps (set_video_encoder_configuration)
     --codec                       Codec (e.g. H264)
     --datetime                    Manual UTC datetime (setdatetime override)
     --del_username                Username to delete (delete_user)
     --dhcp                        DHCP enable flag (set_network_interfaces)
     --dns1, --dns2                DNS servers (set_dns)
-    --eventtype                   Event filter (subscribe_events)
+    --eventtype                   Event filter hint (not all cameras use it)
+    --enable <true|false|1|0>     Enable/disable (set_motion_detection)
     --gateway                     Gateway IP (set_network_interfaces)
     --hostname                    New hostname (sethostname)
     --log, -l                     Send log lines to system logger
@@ -144,7 +182,6 @@ function showHelp() {
   `);
   process.exit(0);
 }
-
 
 if (args.help) showHelp();
 if (args.version) {
@@ -170,7 +207,9 @@ const duration = args.time ? parseFloat(String(args.time).replace(',', '.')) * 1
 if (args.time && (isNaN(duration) || duration <= 0)) errorOut('--time must be a positive number');
 
 function logMessage(msg) {
-  if (args.log) execSync(`logger -t onvif "${msg.replace(/"/g, '\"')}"`);
+  if (args.log) {
+    try { execSync(`logger -t onvif "${msg.replace(/"/g, '\\"')}"`); } catch {}
+  }
 }
 
 logMessage(`Called script onvif_control.js with ${process.argv.slice(2).join(' ')}`);
@@ -178,6 +217,7 @@ if (args.verbose) console.log('[INFO] Called with:', mask(args));
 if (args.debug) console.log(JSON.stringify(mask(args), null, 2));
 if (args['dry-run']) process.exit(0);
 
+// Arg shorthands
 const hostname = args.hostname;
 const ip = args.ip;
 const netmask = args.netmask;
@@ -196,6 +236,15 @@ const eventtype = args.eventtype;
 const logtype = args.logtype;
 const enable_motion = args.enable;
 
+// Events-related args
+const mode = (args.mode || 'push').toLowerCase();
+const pushUrl = args.push_url || args.pushurl;
+const termination = args.termination || 'PT60S';
+const timeout = args.timeout || 'PT30S';
+const msgLimit = args.message_limit ? parseInt(args.message_limit, 10) : 10;
+const autoRenew = !!args.auto_renew;
+const subscriptionUrlArg = args.subscription;
+
 const newUser = args.new_username;
 const newPass = args.new_password;
 const newLevel = args.new_userlevel;
@@ -206,10 +255,10 @@ function buildWSSecurity(username, password) {
   const nonce = crypto.randomBytes(16);
   const created = new Date().toISOString();
   const digest = crypto.createHash('sha1')
-    .update(Buffer.concat([nonce, Buffer.from(created), Buffer.from(password)]))
+    .update(Buffer.concat([nonce, Buffer.from(created), Buffer.from(password || '')]))
     .digest('base64');
   return {
-    Username: username,
+    Username: username || '',
     PasswordDigest: digest,
     Nonce: nonce.toString('base64'),
     Created: created
@@ -236,7 +285,6 @@ function wsseHeaderXml() {
 }
 
 // === Service selection & discovery ===
-
 const BASE_URL = `http://${ip}${args.port ? ':' + args.port : ''}`;
 
 function serviceDefaultPath(svc) {
@@ -246,6 +294,7 @@ function serviceDefaultPath(svc) {
     case 'MEDIA2':
     case 'MEDIA':  return `${BASE_URL}/onvif/media_service`;
     case 'PTZ':    return `${BASE_URL}/onvif/ptz_service`;
+    case 'EVENTS': return `${BASE_URL}/onvif/event_service`;
     default:       return `${BASE_URL}/onvif/ptz_service`;
   }
 }
@@ -257,6 +306,7 @@ function nsForService(svc, isV2 = false) {
     case 'MEDIA':
     case 'MEDIA1': return isV2 ? 'http://www.onvif.org/ver20/media/wsdl' : 'http://www.onvif.org/ver10/media/wsdl';
     case 'PTZ':    return 'http://www.onvif.org/ver20/ptz/wsdl';
+    case 'EVENTS': return 'http://www.onvif.org/ver10/events/wsdl';
     default:       return 'http://www.onvif.org/ver20/ptz/wsdl';
   }
 }
@@ -266,6 +316,7 @@ function pickUrlForService(svc) {
   if (svc === 'MEDIA1' && DISCOVERY.media1) return DISCOVERY.media1;
   if (svc === 'MEDIA')  return DISCOVERY.media2 || DISCOVERY.media1 || serviceDefaultPath('MEDIA');
   if (svc === 'PTZ' && DISCOVERY.ptz) return DISCOVERY.ptz;
+  if (svc === 'EVENTS' && DISCOVERY.events) return DISCOVERY.events;
   if (svc === 'DEVICE') return serviceDefaultPath('DEVICE');
   return serviceDefaultPath(svc);
 }
@@ -276,10 +327,37 @@ function parseUrl(u) {
 
 async function discoverServices() {
   // If already discovered, skip
-  if (DISCOVERY.media1 || DISCOVERY.media2 || DISCOVERY.ptz) return DISCOVERY;
+  if (DISCOVERY.media1 || DISCOVERY.media2 || DISCOVERY.ptz || DISCOVERY.events) return DISCOVERY;
 
+  // Prefer Device:GetCapabilities to also fetch Events XAddr
   const url = serviceDefaultPath('DEVICE');
   const envelope = `
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+  ${wsseHeaderXml()}
+  <s:Body>
+    <tds:GetCapabilities>
+      <tds:Category>All</tds:Category>
+    </tds:GetCapabilities>
+  </s:Body>
+</s:Envelope>`.trim();
+
+  const xml = await rawSoap(url, nsForService('DEVICE') + '/GetCapabilities', envelope);
+  // Media & PTZ
+  {
+    const blocks = xml.match(/<tds:Capabilities>[\s\S]*?<\/tds:Capabilities>/g) || [];
+    for (const b of blocks) {
+      const mediaX = ((b.match(/<tt:Media>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
+      const ptzX   = ((b.match(/<tt:PTZ>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
+      const eventsX= ((b.match(/<tt:Events>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
+      if (mediaX) DISCOVERY.media1 = mediaX;
+      if (ptzX) DISCOVERY.ptz = ptzX;
+      if (eventsX) DISCOVERY.events = eventsX;
+    }
+  }
+
+  // Fallback: Device:GetServices (older code-path)
+  if (!DISCOVERY.media1 || !DISCOVERY.ptz) {
+    const env2 = `
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
   ${wsseHeaderXml()}
   <s:Body>
@@ -288,22 +366,24 @@ async function discoverServices() {
     </tds:GetServices>
   </s:Body>
 </s:Envelope>`.trim();
-
-  const xml = await rawSoap(url, nsForService('DEVICE') + '/GetServices', envelope);
-  const blocks = xml.match(/<tds:Service>[\s\S]*?<\/tds:Service>/g) || [];
-  for (const b of blocks) {
-    const ns = ((b.match(/<tds:Namespace>(.*?)<\/tds:Namespace>/) || [])[1] || '').trim();
-    const xa = ((b.match(/<tds:XAddr>(.*?)<\/tds:XAddr>/) || [])[1] || '').trim();
-    if (!ns || !xa) continue;
-    if (ns.includes('/ver20/media/wsdl')) DISCOVERY.media2 = xa;
-    if (ns.includes('/ver10/media/wsdl')) DISCOVERY.media1 = xa;
-    if (ns.includes('/ver20/ptz/wsdl'))   DISCOVERY.ptz    = xa;
+    const xml2 = await rawSoap(url, nsForService('DEVICE') + '/GetServices', env2);
+    const blocks = xml2.match(/<tds:Service>[\s\S]*?<\/tds:Service>/g) || [];
+    for (const b of blocks) {
+      const ns = ((b.match(/<tds:Namespace>(.*?)<\/tds:Namespace>/) || [])[1] || '').trim();
+      const xa = ((b.match(/<tds:XAddr>(.*?)<\/tds:XAddr>/) || [])[1] || '').trim();
+      if (!ns || !xa) continue;
+      if (ns.includes('/ver20/media/wsdl')) DISCOVERY.media2 = xa;
+      if (ns.includes('/ver10/media/wsdl')) DISCOVERY.media1 = xa;
+      if (ns.includes('/ver20/ptz/wsdl'))   DISCOVERY.ptz    = xa;
+      if (ns.includes('/ver10/events/wsdl')) DISCOVERY.events = xa;
+    }
   }
+
   if (args.verbose) console.error('[DISCOVERY]', DISCOVERY);
   return DISCOVERY;
 }
 
-// low-level SOAP POST (returns raw XML)
+// low-level SOAP POST (returns raw XML) with action header
 function rawSoap(urlStr, actionHeader, envelope) {
   return new Promise((resolve, reject) => {
     const u = parseUrl(urlStr);
@@ -320,7 +400,8 @@ function rawSoap(urlStr, actionHeader, envelope) {
       headers: {
         'Content-Type': `application/soap+xml; charset=utf-8; action="${actionHeader}"`,
         'Content-Length': Buffer.byteLength(envelope)
-      }
+      },
+      rejectUnauthorized: false
     };
 
     const req = mod.request(opts, res => {
@@ -337,16 +418,52 @@ function rawSoap(urlStr, actionHeader, envelope) {
   });
 }
 
+// For some ONVIF endpoints (SubscriptionManager), the action header is not required.
+// Provide a simpler POST that omits it, for maximum compatibility.
+function httpPostXml(targetUrl, xml, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(targetUrl);
+    const isHttps = u.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const req = lib.request({
+      hostname: u.hostname,
+      port: u.port || (isHttps ? 443 : 80),
+      path: u.pathname + (u.search || ''),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/soap+xml; charset=utf-8',
+        'Content-Length': Buffer.byteLength(xml, 'utf8')
+      },
+      timeout: opts.timeoutMs || 15000,
+      rejectUnauthorized: false
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve({ statusCode: res.statusCode, headers: res.headers, body });
+      });
+    });
+    req.on('error', reject);
+    req.write(xml);
+    req.end();
+  });
+}
+
 // === SOAP send wrapper (keeps original style) ===
-// svc: 'PTZ' (default) | 'DEVICE' | 'MEDIA' | 'MEDIA1' | 'MEDIA2'
+// svc: 'PTZ' (default) | 'DEVICE' | 'MEDIA' | 'MEDIA1' | 'MEDIA2' | 'EVENTS'
 function sendSoap(action, body, cb, svc = 'PTZ') {
   const wsse = wsseHeaderXml();
-  const actionNs = nsForService(svc, svc === 'MEDIA' || svc === 'MEDIA2');
+  let actionNs = nsForService(svc, svc === 'MEDIA' || svc === 'MEDIA2');
   const doSend = async () => {
-    if (svc !== 'PTZ') await discoverServices(); // ensure endpoints for media/device as needed
-    else await discoverServices();               // also get PTZ XAddr if present
+    await discoverServices(); // ensure endpoints
 
-    const url = pickUrlForService(svc);
+    let serviceVariant = svc;
+    if (svc === 'MEDIA') {
+      serviceVariant = (DISCOVERY.media2 ? 'MEDIA2' : 'MEDIA1');
+    }
+    const url = pickUrlForService(serviceVariant);
+    actionNs = nsForService(serviceVariant, serviceVariant === 'MEDIA2');
     const envelope = `<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
   ${wsse}
   <s:Body>${body}</s:Body>
@@ -442,8 +559,239 @@ function wakeupSequence(cb) {
   steps[0]();
 }
 
+// === Utility for events parsing ===
+function matchTag(xml, regex) {
+  const m = regex.exec(xml);
+  return m && m[1] ? m[1] : null;
+}
+function isoToMs(iso8601) {
+  if (!iso8601 || typeof iso8601 !== 'string') return 60000;
+  const m = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i.exec(iso8601);
+  if (!m) return 60000;
+  const days = parseInt(m[1] || '0', 10);
+  const hrs = parseInt(m[2] || '0', 10);
+  const mins = parseInt(m[3] || '0', 10);
+  const secs = parseInt(m[4] || '0', 10);
+  return (((days*24 + hrs)*60 + mins)*60 + secs) * 1000;
+}
+function dateDiffMs(aIso, bIso) {
+  try {
+    const a = new Date(aIso).getTime();
+    const b = new Date(bIso).getTime();
+    if (isNaN(a) || isNaN(b)) return null;
+    return b - a;
+  } catch { return null; }
+}
+
 // === ACTIONS ===
-const PTZ = {
+const ACTIONS = {
+  // -------------------- Events block --------------------
+  async subscribe_events() {
+    if (!ip) errorOut('--ip is required');
+    await discoverServices();
+    const eventsUrl = pickUrlForService('EVENTS');
+
+    const deviceUrl = pickUrlForService('DEVICE');
+    const postWithFallback = async (xml) => {
+      try {
+        const resp = await httpPostXml(eventsUrl, xml);
+        if (resp && resp.statusCode && (resp.statusCode === 404 || resp.statusCode === 405)) {
+          throw new Error('HTTP ' + resp.statusCode);
+        }
+        return resp;
+      } catch (err) {
+        if (args.verbose) console.error('[WARN] EVENTS endpoint failed, trying DEVICE…', err && err.message ? err.message : String(err));
+        const resp2 = await httpPostXml(deviceUrl, xml);
+        return resp2;
+      }
+    };
+
+    if (args.verbose) console.error('[ENDPOINT] EVENTS →', eventsUrl);
+
+    // Build envelopes
+    const wsse = wsseHeaderXml();
+
+    const envelopePush = `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:wsa="http://www.w3.org/2005/08/addressing"
+            xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2">
+  ${wsse}
+  <s:Body>
+    <wsnt:Subscribe>
+      <wsnt:ConsumerReference><wsa:Address>${(pushUrl || '').replace(/&/g,'&amp;')}</wsa:Address></wsnt:ConsumerReference>
+      <wsnt:Delivery Mode="http://docs.oasis-open.org/wsn/b-2/HTTP"><wsa:ReferenceParameters/></wsnt:Delivery>
+      <wsnt:InitialTerminationTime>${termination}</wsnt:InitialTerminationTime>
+    </wsnt:Subscribe>
+  </s:Body>
+</s:Envelope>`;
+
+    const envelopePullCreate = `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:tev="http://www.onvif.org/ver10/events/wsdl">
+  ${wsse}
+  <s:Body>
+    <tev:CreatePullPointSubscription>
+      <tev:InitialTerminationTime>${termination}</tev:InitialTerminationTime>
+    </tev:CreatePullPointSubscription>
+  </s:Body>
+</s:Envelope>`;
+
+    const envelopePullWsnt = `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:wsa="http://www.w3.org/2005/08/addressing"
+            xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2">
+  ${wsse}
+  <s:Body>
+    <wsnt:Subscribe>
+      <wsnt:Delivery Mode="http://docs.oasis-open.org/wsn/b-2/Pull"/>
+      <wsnt:InitialTerminationTime>${termination}</wsnt:InitialTerminationTime>
+    </wsnt:Subscribe>
+  </s:Body>
+</s:Envelope>`;
+
+    try {
+      let subObj = null;
+      if (mode === 'push') {
+        if (!pushUrl) errorOut('--push_url is required for push mode');
+        if (args.debug) console.error('REQUEST Subscribe (push):\n', envelopePush);
+        const resp = await postWithFallback(envelopePush);
+        if (args.debug) console.error('RESPONSE Subscribe (push):\n', resp.body);
+        const address = matchTag(resp.body, /<(?:\w+:)?SubscriptionReference>\s*<(?:\w+:)?Address>([^<]+)<\/(?:\w+:)?Address>/i);
+        const current = matchTag(resp.body, /<(?:\w+:)?CurrentTime>([^<]+)<\/(?:\w+:)?CurrentTime>/i);
+        const term    = matchTag(resp.body, /<(?:\w+:)?TerminationTime>([^<]+)<\/(?:\w+:)?TerminationTime>/i);
+        if (!address) errorOut('No SubscriptionReference.Address in Subscribe (push) response');
+        subObj = { subscription: address, currentTime: current, terminationTime: term };
+        if (args.verbose) console.log('[INFO] Push subscription created');
+      } else {
+        // Pull point first
+        if (args.debug) console.error('REQUEST CreatePullPointSubscription:\n', envelopePullCreate);
+        const resp1 = await postWithFallback(envelopePullCreate);
+        if (args.debug) console.error('RESPONSE CreatePullPointSubscription:\n', resp1.body);
+        if (!/SubscriptionReference/i.test(resp1.body)) {
+          if (args.debug) console.error('CreatePullPointSubscription not supported, trying WS-Notification Subscribe (Pull)…');
+          const resp2 = await postWithFallback(envelopePullWsnt);
+          if (args.debug) console.error('RESPONSE Subscribe (pull):\n', resp2.body);
+          const address = matchTag(resp2.body, /<(?:\w+:)?SubscriptionReference>\s*<(?:\w+:)?Address>([^<]+)<\/(?:\w+:)?Address>/i);
+          const current = matchTag(resp2.body, /<(?:\w+:)?CurrentTime>([^<]+)<\/(?:\w+:)?CurrentTime>/i);
+          const term    = matchTag(resp2.body, /<(?:\w+:)?TerminationTime>([^<]+)<\/(?:\w+:)?TerminationTime>/i);
+          if (!address) errorOut('No SubscriptionReference.Address in Subscribe (pull) response');
+          subObj = { subscription: address, currentTime: current, terminationTime: term };
+        } else {
+          const address = matchTag(resp1.body, /<(?:\w+:)?SubscriptionReference>\s*<(?:\w+:)?Address>([^<]+)<\/(?:\w+:)?Address>/i);
+          const current = matchTag(resp1.body, /<(?:\w+:)?CurrentTime>([^<]+)<\/(?:\w+:)?CurrentTime>/i);
+          const term    = matchTag(resp1.body, /<(?:\w+:)?TerminationTime>([^<]+)<\/(?:\w+:)?TerminationTime>/i);
+          if (!address) errorOut('No SubscriptionReference.Address in CreatePullPointSubscription response');
+          subObj = { subscription: address, currentTime: current, terminationTime: term };
+        }
+        if (args.verbose) console.log('[INFO] Pull subscription created');
+      }
+
+      console.log(JSON.stringify({
+        subscription: subObj.subscription,
+        currentTime: subObj.currentTime || null,
+        terminationTime: subObj.terminationTime || null
+      }, null, 2));
+
+      if (autoRenew) {
+        let ttlMs = subObj.currentTime && subObj.terminationTime
+          ? dateDiffMs(subObj.currentTime, subObj.terminationTime)
+          : isoToMs(termination);
+        if (!ttlMs || ttlMs <= 0) ttlMs = isoToMs(termination);
+        let renewMs = Math.max(5000, Math.floor(ttlMs * 0.7));
+        if (args.verbose) console.log(`[INFO] auto_renew active; first renew in ~${Math.round(renewMs/1000)}s`);
+        const subUrl = subObj.subscription;
+
+        async function doRenewLoop() {
+          try {
+            const r = await ACTIONS._renew_internal(subUrl);
+            const newTtlMs = r.currentTime && r.terminationTime ? dateDiffMs(r.currentTime, r.terminationTime) : null;
+            if (newTtlMs && newTtlMs > 0) {
+              renewMs = Math.max(5000, Math.floor(newTtlMs * 0.7));
+              if (args.verbose) console.log(`[INFO] renew ok; next in ~${Math.round(renewMs/1000)}s`);
+            } else if (args.verbose) {
+              console.log('[WARN] renew ok; TTL not provided, keeping previous interval');
+            }
+          } catch (e) {
+            console.error('[ERROR] renew failed:', e.message);
+            renewMs = Math.max(10000, Math.floor(renewMs / 2));
+          } finally {
+            timer = setTimeout(doRenewLoop, renewMs);
+          }
+        }
+        let timer = setTimeout(doRenewLoop, renewMs);
+        const cleanup = async () => {
+          clearTimeout(timer);
+          if (args.auto_unsubscribe_on_exit && subObj.subscription) {
+            try { await ACTIONS._unsubscribe_internal(subUrl); } catch {}
+          }
+          process.exit(0);
+        };
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+        await new Promise(() => {}); // keep process alive
+      }
+    } catch (e) {
+      errorOut(e.message);
+    }
+  },
+
+  async renew_subscription() {
+    if (!subscriptionUrlArg) errorOut('Missing --subscription');
+    try {
+      const r = await ACTIONS._renew_internal(subscriptionUrlArg);
+      if (args.verbose) console.log('[INFO] renew ok');
+      console.log(JSON.stringify({
+        currentTime: r.currentTime || null,
+        terminationTime: r.terminationTime || null
+      }, null, 2));
+    } catch (e) {
+      errorOut(e.message);
+    }
+  },
+
+  async unsubscribe() {
+    if (!subscriptionUrlArg) errorOut('Missing --subscription');
+    try {
+      await ACTIONS._unsubscribe_internal(subscriptionUrlArg);
+      if (args.verbose) console.log('[INFO] unsubscribe ok');
+    } catch (e) {
+      errorOut(e.message);
+    }
+  },
+
+  // Internal helpers for renew/unsubscribe using minimal headers (no action attr)
+  async _renew_internal(subscriptionUrl) {
+    const env = `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2">
+  ${wsseHeaderXml()}
+  <s:Body>
+    <wsnt:Renew><wsnt:TerminationTime>${termination}</wsnt:TerminationTime></wsnt:Renew>
+  </s:Body>
+</s:Envelope>`;
+    if (args.debug) console.error('REQUEST Renew @', subscriptionUrl, ':\n', env);
+    const resp = await httpPostXml(subscriptionUrl, env);
+    if (args.debug) console.error('RESPONSE Renew:\n', resp.body);
+    const current = matchTag(resp.body, /<(?:\w+:)?CurrentTime>([^<]+)<\/(?:\w+:)?CurrentTime>/i);
+    const term    = matchTag(resp.body, /<(?:\w+:)?TerminationTime>([^<]+)<\/(?:\w+:)?TerminationTime>/i);
+    return { currentTime: current || null, terminationTime: term || null };
+  },
+
+  async _unsubscribe_internal(subscriptionUrl) {
+    const env = `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2">
+  ${wsseHeaderXml()}
+  <s:Body><wsnt:Unsubscribe/></s:Body>
+</s:Envelope>`;
+    if (args.debug) console.error('REQUEST Unsubscribe @', subscriptionUrl, ':\n', env);
+    const resp = await httpPostXml(subscriptionUrl, env);
+    if (args.debug) console.error('RESPONSE Unsubscribe:\n', resp.body);
+    return true;
+  },
+
+  // -------------------- Original feature set (v1.1.8) --------------------
+
   move() {
     if (!('pan' in args) || !('tilt' in args)) errorOut('--pan and --tilt are required for move');
     const body = `<tptz:ContinuousMove xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
@@ -453,7 +801,7 @@ const PTZ = {
       </Velocity>
     </tptz:ContinuousMove>`;
     sendSoap('ContinuousMove', body, () => {
-      setTimeout(() => PTZ.stop(true, false), duration);
+      setTimeout(() => ACTIONS.stop(true, false), duration);
     }, 'PTZ');
   },
 
@@ -466,7 +814,7 @@ const PTZ = {
       </Velocity>
     </tptz:ContinuousMove>`;
     sendSoap('ContinuousMove', body, () => {
-      setTimeout(() => PTZ.stop(false, true), duration);
+      setTimeout(() => ACTIONS.stop(false, true), duration);
     }, 'PTZ');
   },
 
@@ -505,7 +853,7 @@ const PTZ = {
     sendSoap('RemovePreset', body, null, 'PTZ');
   },
 
-  presets() {
+  get_presets() {
     const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GetPresets>`;
@@ -666,6 +1014,11 @@ const PTZ = {
     sendSoap('GetDeviceInformation', body, null, 'DEVICE');
   },
 
+  get_device_information() {
+    // Alias to standard Device:GetDeviceInformation
+    return this.get_system_info();
+  },
+
   get_capabilities() {
     const body = `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
     sendSoap('GetCapabilities', body, null, 'DEVICE');
@@ -769,12 +1122,12 @@ const PTZ = {
   },
 
   get_event_properties() {
-    // Not fully mapped to event service XAddr (tev) – keep device path to avoid breaking old cams
+    // Use Events endpoint (tev) for standards-compliant call
     const body = `<tev:GetEventProperties xmlns:tev="http://www.onvif.org/ver10/events/wsdl"/>`;
-    sendSoap('GetEventProperties', body, null, 'DEVICE');
+    sendSoap('GetEventProperties', body, null, 'EVENTS');
   },
 
-  subscribe_events() {
+  subscribe_events_device() {
     const body = `<tev:Subscribe xmlns:tev="http://www.onvif.org/ver10/events/wsdl"/>`;
     sendSoap('Subscribe', body, null, 'DEVICE');
   },
@@ -807,10 +1160,9 @@ const PTZ = {
     const body = `<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
     sendSoap('GetNodes', body, null, 'PTZ');
   },
-
-  get_presets() {
-    // Alias to 'presets'
-    this.presets();
+  presets() {
+    // Alias to 'get_presets'
+    this.get_presets();
   },
 
   preset() {
@@ -893,5 +1245,5 @@ function netmaskToPrefix(mask) {
 }
 
 const act = String(args.action || '').toLowerCase();
-if (!PTZ[act]) errorOut(`Unsupported action: ${act}`);
-PTZ[act]();
+if (!ACTIONS[act]) errorOut(`Unsupported action: ${act}`);
+ACTIONS[act]();
