@@ -57,7 +57,7 @@ You should see something like:
 ### 2) Subscribe the camera to push events (in another terminal)
 
 ```bash
-node /home/onvif/onvif_control.1.1.9.js \
+node /home/onvif/onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=subscribe_events \
@@ -72,7 +72,7 @@ If the camera accepts, you’ll get a `SubscriptionReference` URL and a `Termina
 **Optional:** keep the subscription alive automatically (runs in a loop and renews just before expiry):
 
 ```bash
-node /home/onvif/onvif_control.1.1.9.js \
+node /home/onvif/onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=subscribe_events \
@@ -197,7 +197,7 @@ XML
 
 Subscribe in **push** mode:
 ```bash
-node onvif_control.1.1.9.js \
+node onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=subscribe_events \
@@ -209,7 +209,7 @@ node onvif_control.1.1.9.js \
 
 Optional **auto‑renew** (keeps running and periodically renews):
 ```bash
-node onvif_control.1.1.9.js \
+node onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=subscribe_events \
@@ -334,7 +334,7 @@ sudo systemctl status onvif-listener.service
 
 **Subscribe (push) for 5 minutes:**
 ```bash
-node /home/onvif/onvif_control.1.1.9.js \
+node /home/onvif/onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=subscribe_events \
@@ -346,7 +346,7 @@ node /home/onvif/onvif_control.1.1.9.js \
 
 **Auto‑renew forever (until Ctrl‑C):**
 ```bash
-node /home/onvif/onvif_control.1.1.9.js \
+node /home/onvif/onvif_control.js \
   --ip=172.20.1.172 --port=8080 \
   --user=admin --pass=XXXXXX \
   --action=subscribe_events \
