@@ -405,6 +405,75 @@ curl -s -X POST "http://172.20.1.103:9000/onvif_hook" \
 XML
 ```
 
+## Pull mode (optional / when supported)
+
+Some cameras implement **WS-Notification Pull** or **CreatePullPointSubscription** instead of HTTP push.
+
+**Subscribe in pull mode:**
+```bash
+node /home/onvif/onvif_control.js \
+  --ip=172.20.1.172 --port=8080 \
+  --user=admin --pass=XXXXXX \
+  --action=subscribe_events \
+  --mode=pull \
+  --termination=PT120S \
+  --verbose --debug
+```
+
+> Notes:
+> - The current CLI creates the pull subscription; message retrieval is typically done by a separate **PullMessages loop** on your side. The flags `--timeout` and `--message_limit` are reserved for that and may be used by future helpers.
+> - Many budget devices **do not** implement pull. If you see `ActionNotSupported`, stick with **push**.
+
+
+
+## Renew & Unsubscribe (housekeeping)
+
+**Renew** (extend lifetime):
+```bash
+node /home/onvif/onvif_control.js --action=renew_subscription \
+  --ip=172.20.1.172 --port=8080 --user=admin --pass=XXXXXX \
+  --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
+  --termination=PT600S --verbose --debug
+```
+
+**Unsubscribe** (clean up):
+```bash
+node /home/onvif/onvif_control.js --action=unsubscribe \
+  --ip=172.20.1.172 --port=8080 --user=admin --pass=XXXXXX \
+  --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
+  --verbose --debug
+```
+
+**Auto renew** (hands‑off):
+```bash
+node /home/onvif/onvif_control.js --action=subscribe_events \
+  --ip=172.20.1.172 --port=8080 --user=admin --pass=XXXXXX \
+  --mode=push --push_url=http://172.20.1.103:9000/onvif_hook \
+  --termination=PT300S --auto_renew --verbose --debug
+```
+
+## Legacy subscribe via Device service (fallback)
+
+Some firmwares only accept event subscriptions via the **Device** service (not the Events XAddr).
+
+```bash
+node /home/onvif/onvif_control.js \
+  --ip=172.20.1.172 --port=8080 --user=admin --pass=XXXXXX \
+  --action=subscribe_events_device --verbose --debug
+```
+
+
+## Event options quick reference
+
+- `--mode <push|pull>           Delivery mode (default: push)`
+- `--push_url <url>             Push: consumer URL (e.g. http://host:9000/onvif_hook)`
+- `--termination <dur>          Requested TTL (ISO8601 duration, default: PT60S)`
+- `--timeout <dur>              Pull: timeout per PullMessages (default: PT30S) [reserved]`
+- `--message_limit <int>        Pull: max messages per pull (default: 10) [reserved]`
+- `--subscription <url>         Subscription Manager URL (for renew_subscription / unsubscribe)`
+- `--auto_renew                 Keep renewing automatically (subscribe_events only)`
+- `--auto_unsubscribe_on_exit   On SIGINT/SIGTERM, auto-unsubscribe (when auto_renew is active)`
+
 ---
 
 ## Security notes
@@ -430,3 +499,6 @@ A: Not required, but recommended during testing to avoid stale subscriptions.
 
 **Q: Can I subscribe multiple cameras to the same listener?**  
 A: Yes. They’ll all POST to the same `--path`. The log will include the source IP in the console (`request from ...`) and you can separate by content if needed.
+
+
+
