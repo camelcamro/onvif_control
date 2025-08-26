@@ -14,7 +14,7 @@ It’s written for beginners and power users alike, with copy‑pasteable comman
   - Appends full raw payloads to a log file (with timestamps) and does simple log rotation at ~20 MB.
   - CLI flags: `--port`, `--path`, `--outfile`, `--verbose`, `--debug`, `--help`.
 
-- **`onvif_control.<version>.js`** (≥ v1.1.9 / 1.1.9a) – a command‑line tool that talks to your camera’s ONVIF services:
+- **`onvif_control.<version>.js`** (≥ v1.1.9) – a command‑line tool that talks to your camera’s ONVIF services:
   - `subscribe_events` (push & pull; push is recommended here).
   - `renew_subscription` (extend subscription lifetime).
   - `unsubscribe` (cleanly remove a subscription).
@@ -59,7 +59,7 @@ You should see something like:
 ```bash
 node /home/onvif/onvif_control.1.1.9.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=subscribe_events \
   --mode=push \
   --termination=PT300S \
@@ -74,7 +74,7 @@ If the camera accepts, you’ll get a `SubscriptionReference` URL and a `Termina
 ```bash
 node /home/onvif/onvif_control.1.1.9.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=subscribe_events \
   --mode=push \
   --termination=PT300S \
@@ -199,7 +199,7 @@ Subscribe in **push** mode:
 ```bash
 node onvif_control.1.1.9.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=subscribe_events \
   --mode=push \
   --push_url=http://172.20.1.103:9000/onvif_hook \
@@ -211,7 +211,7 @@ Optional **auto‑renew** (keeps running and periodically renews):
 ```bash
 node onvif_control.1.1.9.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=subscribe_events \
   --mode=push \
   --push_url=http://172.20.1.103:9000/onvif_hook \
@@ -239,7 +239,7 @@ Extend a valid subscription’s lifetime (push or pull). You need the **subscrip
 ```bash
 node onvif_control.1.1.9a.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=renew_subscription \
   --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
   --termination=PT600S \
@@ -258,7 +258,7 @@ Cleanly remove a subscription:
 ```bash
 node onvif_control.1.1.9a.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=unsubscribe \
   --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
   --verbose --debug
@@ -336,7 +336,7 @@ sudo systemctl status onvif-listener.service
 ```bash
 node /home/onvif/onvif_control.1.1.9.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=subscribe_events \
   --mode=push \
   --termination=PT300S \
@@ -348,7 +348,7 @@ node /home/onvif/onvif_control.1.1.9.js \
 ```bash
 node /home/onvif/onvif_control.1.1.9.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=subscribe_events \
   --mode=push \
   --termination=PT300S \
@@ -361,7 +361,7 @@ node /home/onvif/onvif_control.1.1.9.js \
 ```bash
 node /home/onvif/onvif_control.1.1.9a.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=renew_subscription \
   --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
   --termination=PT600S \
@@ -372,7 +372,7 @@ node /home/onvif/onvif_control.1.1.9a.js \
 ```bash
 node /home/onvif/onvif_control.1.1.9a.js \
   --ip=172.20.1.172 --port=8080 \
-  --user=admin --pass=camel111 \
+  --user=admin --pass=XXXXXX \
   --action=unsubscribe \
   --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=0 \
   --verbose --debug
