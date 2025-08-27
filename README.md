@@ -28,7 +28,6 @@ So, i created this project.
 
 ## 📁 Installation Guide
 
-
 - Full ONVIF device control (reboot, factory reset, set time)
 - Stream & snapshot URI fetch
 - Device information: hostname, capabilities, system logs
@@ -119,6 +118,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 |------------------------------|---------------------------------------------------------------------|
 | `--mode`                     | Delivery mode (`push\\|pull` (default `push`))                      |
 | `--push_url`                 | Push: consumer URL (e.g. `http://host:9000/onvif_hook`)             |
+| `--pushurl`                  | Alias for `--push_url` (push mode)                                  |
 | `--termination`              | Requested TTL (ISO8601 duration, default: `PT60S`)                  |
 | `--timeout`                  | Pull: timeout per PullMessages (default: `PT30S`) [reserved]        |
 | `--message_limit`            | Pull: max messages per pull (default: `10`) [reserved]              |
@@ -164,6 +164,9 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--wakeup`                        | Send GetNodes→GetConfigurations→GetPresets before PTZ |
 | `--wakeup_simple`                 | Send GetPresets before PTZ                            |
 | `--zoom, -z`                      | Zoom value                                            |
+| `--mute`, `-m`                    | Suppress error prints (mute console errors)           |
+| `--dry-run`, `-r`                 | Do not send SOAP; validate & show intended action     |
+| `--logtype`                       | Log type for `get_system_logs` (`System`\|`Access`)   |
 
 ### Action based call
 | Option      | Description                                      |
@@ -174,7 +177,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 ## 🔧 Supported Actions
 
 ### [Discovery]
-- `get_services` — Discover XAddr endpoints (Media v2/v1, PTZ), Events)
+- `get_services` — Discover XAddr endpoints (Media v2/v1, PTZ, Events)
 
 ### get_services
 
@@ -262,7 +265,7 @@ node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --a
 Continuous pan/tilt for --time seconds
 
 ```bash
-node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=move --time=1.5 --pan=0.2
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=move --time=1.5 --pan=0.2 --tilt=0
 ```
 
 ### relativemove
@@ -371,7 +374,7 @@ node onvif_control.js --ip=IP --port=PORT --user=USER --pass=PASS --action=renew
 Legacy subscription via the Device service (fallback when Events XAddr rejects Subscribe).
 
 ```bash
-node onvif_control.js --ip=IP --port=PORT --user=USER --pass=PASS --action=subscribe_events_device --verbose --debug
+node onvif_control.js --ip=IP --port=PORT --user=USER --pass=PASS --action=subscribe_events_device --push_url=http://host:9000/onvif_hook --verbose --debug
 ```
 
 ### unsubscribe
@@ -407,7 +410,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --p
 
 ### Move Left (1.5s)
 ```bash
-node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=move --time=1.5 --pan=-0.5
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=move --time=1.5 --pan=-0.5 --tilt=0
 ```
 
 ### Move Up (1.5s)
@@ -553,7 +556,7 @@ node onvif_control.js --action=get_system_logs ...
 
 ### Set NTP Server
 ```bash
-node onvif_control.js --action=set_ntp ...
+node onvif_control.js --action=set_ntp --ntp_server=pool.ntp.org
 ```
 
 ### Set/Get DNS
@@ -562,12 +565,12 @@ node onvif_control.js --action=get_dns
 ```
 
 ```bash
-node onvif_control.js --action=set_dns
+node onvif_control.js --action=set_dns --dns1=8.8.8.8 --dns2=1.1.1.1
 ```
 
 ### Subscribe to Events
 ```bash
-node onvif_control.js --action=subscribe_events
+node onvif_control.js --action=subscribe_events --push_url=http://host:9000/onvif_hook
 ```
 ## 🔍 Example Calls for Each Action
 
@@ -628,7 +631,7 @@ node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_net
 
 ### set_network_interfaces
 ```bash
-node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_network_interfaces
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_network_interfaces --netmask=255.255.255.0 --gateway=192.168.1.1 --dhcp=0
 ```
 
 ### get_users
@@ -648,7 +651,7 @@ node onvif_control.js --ip=... --port=... --user=... --pass=... --action=delete_
 
 ### set_ntp
 ```bash
-node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_ntp
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_ntp --ntp_server=pool.ntp.org
 ```
 
 ### get_dns
@@ -658,7 +661,7 @@ node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_dns
 
 ### set_dns
 ```bash
-node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_dns
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_dns --dns1=8.8.8.8 --dns2=1.1.1.1
 ```
 
 ### get_event_properties
@@ -678,7 +681,7 @@ node onvif_control.js --ip=... --port=... --user=... --pass=... --action=set_mot
 
 ### subscribe_events
 ```bash
-node onvif_control.js --ip=... --port=... --user=... --pass=... --action=subscribe_events
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=subscribe_events --push_url=http://host:9000/onvif_hook
 ```
 
 ### gethostname
@@ -688,7 +691,7 @@ node onvif_control.js --ip=... --port=... --user=... --pass=... --action=gethost
 
 ### sethostname
 ```bash
-node onvif_control.js --ip=... --port=... --user=... --pass=... --action=sethostname
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=sethostname --hostname=<name>
 ```
 
 ### set_static_ip
@@ -703,7 +706,7 @@ node onvif_control.js --ip=... --port=... --user=... --pass=... --action=enable_
 
 ### reset_password
 ```bash
-node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reset_password
+node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reset_password --username=<user> --new_password=<pass>
 ```
 
 ### reboot
@@ -722,10 +725,12 @@ node onvif_control.js --ip=... --port=... --user=... --pass=... --action=factory
 
 
 
+
 configurations → get_configurations
 preset → goto
 presets → get_presets
-get_static_ip → get_network_interfaces
+get_static_ip → get_network_interfaceshome
+home → gotohomeposition
 
 ## 🧠 Expert & Troubleshooting
 
