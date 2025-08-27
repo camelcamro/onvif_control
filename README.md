@@ -101,38 +101,38 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 
 | Option      | Alias | Description                                      |
 | ----------- | ----- | ------------------------------------------------ |
-| `--ip`      | `-i`  | Camera IP                                        |
-| `--port`    | ``    | Camera ONVIF port (e.g. 80 or 8080)              |
-| `--user`    | `-u`  | Username (ONVIF user)                            |
-| `--pass`    | ``    | Password                                         |
-| `--token`   | `-k`  | ProfileToken (e.g. from get_profiles)            |
-| `--time`    | `-t`  | Duration (s) for continuous move/zoom            |
 | `--debug`   | `-d`  | Print arguments + raw SOAP                       |
-| `--verbose` | `-v`  | Verbose logs                                     |
 | `--help`    | `-h`  | This help                                        |
+| `--ip`      | `-i`  | Camera IP                                        |
+| `--pass`    | ``    | Password                                         |
+| `--port`    | ``    | Camera ONVIF port (e.g. 80 or 8080)              |
+| `--time`    | `-t`  | Duration (s) for continuous move/zoom            |
+| `--token`   | `-k`  | ProfileToken (e.g. from get_profiles)            |
+| `--user`    | `-u`  | Username (ONVIF user)                            |
+| `--verbose` | `-v`  | Verbose logs                                     |
 | `--version` | ``    | Print version                                    |
 
 ### Event-specific options
 
 | Option                       | Description                                                         |
 |------------------------------|---------------------------------------------------------------------|
+| `--auto_renew`               | Keep renewing automatically (`subscribe_events` only)               |
+| `--auto_unsubscribe_on_exit` | On SIGINT/SIGTERM, auto-unsubscribe (when `--auto_renew` is active) |
+| `--message_limit`            | Pull: max messages per pull (default: `10`) [reserved]              |
 | `--mode`                     | Delivery mode (`push\\|pull` (default `push`))                      |
 | `--push_url`                 | Push: consumer URL (e.g. `http://host:9000/onvif_hook`)             |
 | `--pushurl`                  | Alias for `--push_url` (push mode)                                  |
+| `--subscription`             | Subscription Manager URL (for `renew_subscription` / `unsubscribe`) |
 | `--termination`              | Requested TTL (ISO8601 duration, default: `PT60S`)                  |
 | `--timeout`                  | Pull: timeout per PullMessages (default: `PT30S`) [reserved]        |
-| `--message_limit`            | Pull: max messages per pull (default: `10`) [reserved]              |
-| `--subscription`             | Subscription Manager URL (for `renew_subscription` / `unsubscribe`) |
-| `--auto_renew`               | Keep renewing automatically (`subscribe_events` only)               |
-| `--auto_unsubscribe_on_exit` | On SIGINT/SIGTERM, auto-unsubscribe (when `--auto_renew` is active) |
 
 ### [Events / Detection]
 - `get_event_properties` — Get ONVIF event capabilities
 - `get_motion_detection` — Read motion detection settings
-- `set_motion_detection` — Enable/disable motion detection
-- `subscribe_events` — Subscribe to ONVIF events
 - `renew_subscription` — Renew an existing subscription (by Subscription Manager URL)
+- `set_motion_detection` — Enable/disable motion detection
 - `subscribe_events_device` — Legacy subscribe via Device service (fallback)
+- `subscribe_events` — Subscribe to ONVIF events
 - `unsubscribe` — Cancel an existing subscription (by Subscription Manager URL)
 
 ### Other optional options
@@ -145,11 +145,14 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--del_username`                  | Username to delete (delete_user)                      |
 | `--dhcp`                          | DHCP enable flag (set_network_interfaces)             |
 | `--dns1, --dns2`                  | DNS servers (set_dns)                                 |
-| `--eventtype`                     | Event filter hint (not all cameras use it)            |
+| `--dry-run`, `-r`                 | Do not send SOAP; validate & show intended action     |
 | `--enable <true\\|false\\|1\\|0>` | Enable/disable (set_motion_detection)                 |
+| `--eventtype`                     | Event filter hint (not all cameras use it)            |
 | `--gateway`                       | Gateway IP (set_network_interfaces)                   |
 | `--hostname`                      | New hostname (sethostname)                            |
 | `--log, -l`                       | Send log lines to system logger                       |
+| `--logtype`                       | Log type for `get_system_logs` (`System`\|`Access`)   |
+| `--mute`, `-m`                    | Suppress error prints (mute console errors)           |
 | `--netmask`                       | Netmask (set_network_interfaces)                      |
 | `--new_password`                  | Password for new user (add_user)                      |
 | `--new_userlevel`                 | Access level (Administrator, User, Operator)          |
@@ -161,12 +164,9 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--resolution`                    | WidthxHeight (set_video_encoder_configuration)        |
 | `--tilt, -y`                      | Tilt value                                            |
 | `--username`                      | Target username (reset_password)                      |
-| `--wakeup`                        | Send GetNodes→GetConfigurations→GetPresets before PTZ |
 | `--wakeup_simple`                 | Send GetPresets before PTZ                            |
+| `--wakeup`                        | Send GetNodes→GetConfigurations→GetPresets before PTZ |
 | `--zoom, -z`                      | Zoom value                                            |
-| `--mute`, `-m`                    | Suppress error prints (mute console errors)           |
-| `--dry-run`, `-r`                 | Do not send SOAP; validate & show intended action     |
-| `--logtype`                       | Log type for `get_system_logs` (`System`\|`Access`)   |
 
 ### Action based call
 | Option      | Description                                      |
