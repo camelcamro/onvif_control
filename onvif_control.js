@@ -5,6 +5,22 @@
 // Version: 1.1.9
 // Build Date: 2025-08-26
 //
+// - Backwards compatible with v1.1.8 actions & flags
+// - New actions: subscribe_events, renew_subscription, unsubscribe
+// - New flags : --mode, --push_url, --termination, --timeout, --message_limit, --subscription, --auto_renew
+//
+// Usage examples (events):
+//   node onvif_control.1.1.9.js --ip=172.20.1.172 --port=8080 --user=admin --pass=*** \
+//     --action=subscribe_events --mode=push --termination=PT300S \
+//     --push_url=http://172.20.1.103:9000/onvif_hook --debug --verbose
+//
+//   node onvif_control.1.1.9.js --action=renew_subscription \
+//     --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=2 \
+//     --user=admin --pass=*** --termination=PT300S --verbose
+//
+//   node onvif_control.1.1.9.js --action=unsubscribe \
+//     --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=2 \
+//     --user=admin --pass=*** --verbose
 
 'use strict';
 
@@ -38,6 +54,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const WAKEUP_SLEEP_MS = 1000;
 // Timeout in milliseconds for SOAP requests
 const SOCKET_TIMEOUT_MS = 5000;
+// Guard to avoid endless GotoPreset retries when camera has 0 presets
+let GOTO_PRESET_RETRIED = false;
 
 // Discovered service endpoints (filled by GetServices / GetCapabilities)
 const DISCOVERY = { media1: null, media2: null, ptz: null, events: null };
@@ -73,6 +91,7 @@ function showHelp() {
     get_nodes                    List PTZ nodes
     get_presets                  List PTZ presets (tokens & names)
     goto                         Go to preset by token
+    gotohomeposition             Go to PTZ Home position
     move                         Continuous pan/tilt for --time seconds
     relativemove                 Relative PT step
     removepreset                 Delete PTZ preset by token
@@ -122,6 +141,7 @@ function showHelp() {
 
   Aliases (kept for backward compatibility):
     configurations      → get_configurations
+    home                → gotohomeposition
     preset              → goto
     presets             → get_presets
     get_static_ip       → get_network_interfaces
@@ -487,6 +507,8 @@ function sendSoap(action, body, cb, svc = 'PTZ') {
         // Auto-retry flow for missing preset tokens
         if (/NoToken|preset token does not exist/i.test(xml)) {
           if (String(action).toLowerCase().includes('gotopreset')) {
+            if (GOTO_PRESET_RETRIED) { console.error('[AUTO] Preset token still invalid. No presets found or not supported. Aborting retry.'); cb && cb(); return; }
+            GOTO_PRESET_RETRIED = true;
             console.log('[AUTO] Preset token not found → requesting GetPresets list…');
             const bodyPresets = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
             return rawSoap(pickUrlForService('PTZ'), `${nsForService('PTZ')}/GetPresets`, `<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">${wsse}<s:Body>${bodyPresets}</s:Body></s:Envelope>`)
@@ -787,6 +809,13 @@ const ACTIONS = {
     sendSoap('ContinuousMove', body, () => {
       setTimeout(() => ACTIONS.stop(true, false), duration);
     }, 'PTZ');
+  },
+
+  gotohomeposition() {
+    const body = `<tptz:GotoHomePosition xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
+      <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
+    </tptz:GotoHomePosition>`;
+    sendSoap('GotoHomePosition', body, null, 'PTZ');
   },
 
   zoom() {
@@ -1152,6 +1181,11 @@ const ACTIONS = {
   preset() {
     // Alias to 'goto'
     this.goto();
+  },
+
+  home() {
+    // Alias to 'gotohomeposition'
+    this.gotohomeposition();
   },
 
   get_static_ip() {
