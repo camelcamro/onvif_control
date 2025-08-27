@@ -1,8 +1,8 @@
 
 # ONVIF Control Script
 
-**Version:** 1.1.8 (Full Extended)  
-**Build Date:** 2025-08-25 
+**Version:** 1.1.9
+**Build Date:** 2025-08-26
 **Author:** camel (camelcamro)
 
 ---
@@ -44,8 +44,8 @@ So, i created this project.
 - **npm**  
 - **Network access** to ONVIF-compatible camera  
 - **Linux with logger** command (for system log support)
-- **minimist** installed in same directy as where the *onvif_controls.js* file is located (see section: Setup)
-- **xml2js** installed in same directy as where the *onvif_controls.js* file is located (see section: Setup)
+- **minimist** installed in same directy as where the *onvif_control.js* file is located (see section: Setup)
+- **xml2js** installed in same directy as where the *onvif_control.js* file is located (see section: Setup)
  
 ### 🧰 Install on a Raspberry Pi (Raspbian/Debian)
 
@@ -99,17 +99,93 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 ## 🚀 Basic Usage
 
 ### Mandatory Parameters
-| Option     | Alias | Description                                      |
-|------------|-------|--------------------------------------------------|
-| `--action` |       | Action to perform (`move`, `zoom`, `goto`, etc.) |
-| `--ip`     | `-i`  | IP of camera                                     |
-| `--port`   |       | Port of ONVIF service (e.g. 8080)                |
+
+| Option      | Alias | Description                                      |
+| ----------- | ----- | ------------------------------------------------ |
+| `--ip`      | `-i`  | Camera IP                                        |
+| `--port`    | ``    | Camera ONVIF port (e.g. 80 or 8080)              |
+| `--user`    | `-u`  | Username (ONVIF user)                            |
+| `--pass`    | ``    | Password                                         |
+| `--token`   | `-k`  | ProfileToken (e.g. from get_profiles)            |
+| `--time`    | `-t`  | Duration (s) for continuous move/zoom            |
+| `--debug`   | `-d`  | Print arguments + raw SOAP                       |
+| `--verbose` | `-v`  | Verbose logs                                     |
+| `--help`    | `-h`  | This help                                        |
+| `--version` | ``    | Print version                                    |
+
+### Event-specific options
+
+| Option                       | Description                                                         |
+|------------------------------|---------------------------------------------------------------------|
+| `--mode`                     | Delivery mode (`push\\|pull` (default `push`))                      |
+| `--push_url`                 | Push: consumer URL (e.g. `http://host:9000/onvif_hook`)             |
+| `--termination`              | Requested TTL (ISO8601 duration, default: `PT60S`)                  |
+| `--timeout`                  | Pull: timeout per PullMessages (default: `PT30S`) [reserved]        |
+| `--message_limit`            | Pull: max messages per pull (default: `10`) [reserved]              |
+| `--subscription`             | Subscription Manager URL (for `renew_subscription` / `unsubscribe`) |
+| `--auto_renew`               | Keep renewing automatically (`subscribe_events` only)               |
+| `--auto_unsubscribe_on_exit` | On SIGINT/SIGTERM, auto-unsubscribe (when `--auto_renew` is active) |
+
+### [Events / Detection]
+- `get_event_properties` — Get ONVIF event capabilities
+- `get_motion_detection` — Read motion detection settings
+- `set_motion_detection` — Enable/disable motion detection
+- `subscribe_events` — Subscribe to ONVIF events
+- `renew_subscription` — Renew an existing subscription (by Subscription Manager URL)
+- `subscribe_events_device` — Legacy subscribe via Device service (fallback)
+- `unsubscribe` — Cancel an existing subscription (by Subscription Manager URL)
+
+
+
+
+### Other optional options
+
+| Option                            | Description                                           |
+|-----------------------------------|-------------------------------------------------------|
+| `--bitrate`                       | Bitrate in kbps (set_video_encoder_configuration)     |
+| `--codec`                         | Codec (e.g. H264)                                     |
+| `--datetime`                      | Manual UTC datetime (setdatetime override)            |
+| `--del_username`                  | Username to delete (delete_user)                      |
+| `--dhcp`                          | DHCP enable flag (set_network_interfaces)             |
+| `--dns1, --dns2`                  | DNS servers (set_dns)                                 |
+| `--eventtype`                     | Event filter hint (not all cameras use it)            |
+| `--enable <true\\|false\\|1\\|0>` | Enable/disable (set_motion_detection)                 |
+| `--gateway`                       | Gateway IP (set_network_interfaces)                   |
+| `--hostname`                      | New hostname (sethostname)                            |
+| `--log, -l`                       | Send log lines to system logger                       |
+| `--netmask`                       | Netmask (set_network_interfaces)                      |
+| `--new_password`                  | Password for new user (add_user)                      |
+| `--new_userlevel`                 | Access level (Administrator, User, Operator)          |
+| `--new_username`                  | Username to create (add_user)                         |
+| `--ntp_server`                    | NTP server IP/host (set_ntp)                          |
+| `--pan, -p`                       | Pan value                                             |
+| `--preset=<NAME>, -e`             | Preset name (setpreset) or for legacy alias           |
+| `--presetname=<NAME>, -n`         | Preset name (setpreset)                               |
+| `--resolution`                    | WidthxHeight (set_video_encoder_configuration)        |
+| `--tilt, -y`                      | Tilt value                                            |
+| `--username`                      | Target username (reset_password)                      |
+| `--wakeup`                        | Send GetNodes→GetConfigurations→GetPresets before PTZ |
+| `--wakeup_simple`                 | Send GetPresets before PTZ                            |
+| `--zoom, -z`                      | Zoom value                                            |
+
+### Action based call
+| Option      | Description                                      |
+| ----------- | ------------------------------------------------ |
+| `--action`  | Action to perform (`move`, `zoom`, `goto`, etc.) |
+|             | See long list above under: Supported Actions     |
 
 ## 🔧 Supported Actions
 
 ### [Discovery]
-- `get_services` — Discover XAddr endpoints (Media v2/v1, PTZ)
+- `get_services` — Discover XAddr endpoints (Media v2/v1, PTZ), Events)
 
+### get_services
+
+Discover XAddr endpoints (Media v2/v1, PTZ, Events)
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=get_services
+```
 ### [PTZ]
 - `absolutemove` — Move to absolute PT coordinates
 - `configoptions` — Get PTZ configuration options
@@ -125,13 +201,115 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 - `stop` — Stop PT and/or zoom
 - `zoom` — Continuous zoom for `--time` seconds
 
+### absolutemove
+
+Move to absolute PT coordinates
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=absolutemove --pan=0.1 --tilt=0.1 --zoom=0.1
+```
+
+### configoptions
+
+Get PTZ configuration options
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=configoptions
+```
+
+### get_configurations
+
+List PTZ configurations
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=get_configurations
+```
+
+### get_nodes
+
+List PTZ nodes
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=get_nodes
+```
+
+### get_presets
+
+List PTZ presets (tokens & names)
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=get_presets
+```
+
+### goto
+
+Go to preset by token
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=goto --preset=Preset001 --token=MainStreamProfileToken
+```
+
+### move
+
+Continuous pan/tilt for --time seconds
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=move --time=1.5 --pan=0.2
+```
+
+### relativemove
+
+Relative PT step
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=relativemove --pan=0.1 --tilt=0.1 --zoom=0.1
+```
+
+### removepreset
+
+Delete PTZ preset by token
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=removepreset --preset=Preset005
+```
+
+### setpreset
+
+Create a PTZ preset (returns token)
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=setpreset --presetname=Preset005
+```
+
+### status
+
+Get PTZ status
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=status
+```
+
+### stop
+
+Stop PT and/or zoom
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=stop
+```
+
+### zoom
+
+Continuous zoom for --time seconds
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=zoom --time=1.5 --zoom=0.2
+```
 ### [Media]
 - `get_profiles` — List media profiles (**prefers Media v2**, fallback to v1)
 - `get_snapshot_uri` — Get JPEG snapshot URL
 - `get_stream_uri` — Get RTSP stream URL
 - `get_video_encoder_configuration` — Read current video encoder settings
 - `set_video_encoder_configuration` — Change video encoder settings
-
 ### [Device / Network]
 - `add_user` — Create ONVIF user
 - `delete_user` — Delete ONVIF user
@@ -144,6 +322,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 - `get_system_date_and_time` — Read current device time
 - `get_system_info` — Get system info (model, vendor)
 - `get_system_logs` — Get system/access logs (`--logtype=System|Access`)
+- `get_users` — List ONVIF users
 - `gethostname` — Get device hostname
 - `reboot` — Reboot the camera
 - `reset_password` — Reset ONVIF password
@@ -154,19 +333,46 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 - `setdatetime` — Set local time and timezone dynamically
 - `sethostname` — Set device hostname
 
+
+### get_system_logs
+
+Get system/access logs (--logtype=System|Access)
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=get_system_logs --logtype=System
+```
 ### [Events / Detection]
 - `get_event_properties` — Get ONVIF event capabilities
 - `get_motion_detection` — Read motion detection settings
 - `set_motion_detection` — Enable/disable motion detection
 - `subscribe_events` — Subscribe to ONVIF events
+- `renew_subscription` — Renew an existing subscription (by Subscription Manager URL)
+- `subscribe_events_device` — Legacy subscribe via Device service (fallback)
+- `unsubscribe` — Cancel an existing subscription (by Subscription Manager URL)
 
-### Aliases (kept for backward compatibility)
-- `configurations` → `get_configurations`
-- `preset` → `goto`
-- `presets` → `get_presets`
-- `get_static_ip` → `get_network_interfaces`
+### renew_subscription
 
+Renew an existing subscription by its Subscription Manager URL. Use `--termination` to request a new TTL.
 
+```bash
+node onvif_control.js --ip=IP --port=PORT --user=USER --pass=PASS --action=renew_subscription --subscription=http://CAMERA/onvif/Subscription?Idx=0 --termination=PT600S --verbose --debug
+```
+
+### subscribe_events_device
+
+Legacy subscription via the Device service (fallback when Events XAddr rejects Subscribe).
+
+```bash
+node onvif_control.js --ip=IP --port=PORT --user=USER --pass=PASS --action=subscribe_events_device --verbose --debug
+```
+
+### unsubscribe
+
+Cancel an existing subscription by its Subscription Manager URL.
+
+```bash
+node onvif_control.js --ip=IP --port=PORT --user=USER --pass=PASS --action=unsubscribe --subscription=http://CAMERA/onvif/Subscription?Idx=0 --verbose --debug
+```
 ## 📚 Examples
 
 ### Discovery-first quick start (recommended)
@@ -188,32 +394,32 @@ Assume script is located at `/home/onvif/onvif_control.js`
 
 ### Move Right (1.5s)
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0.5 --tilt=0 --time=1.5
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0.5 --tilt=0 --time=1.5
 ```
 
 ### Move Left (1.5s)
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=-0.5
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=move --time=1.5 --pan=-0.5
 ```
 
 ### Move Up (1.5s)
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0 --tilt=0.5
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=move --time=1.5 --pan=0 --tilt=0.5
 ```
 
 ### Move Down (1.5s)
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=move --pan=0 --tilt=-0.5
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=move --time=1.5 --pan=0 --tilt=-0.5
 ```
 
 ### Zoom In (1.5s)
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=0.5 --time=1.5
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=0.5 --time=1.5
 ```
 
 ### Zoom Out (1.5s)
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=-0.5 --time=1.5
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=zoom --zoom=-0.5 --time=1.5
 ```
 
 ---
@@ -221,17 +427,17 @@ node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pa
 ## 🧪 Goto, Save, Delete Preset
 ### Save Preset
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=setpreset --presetname=Preset005
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=setpreset --presetname=Preset005
 ```
 
 ### Go to Preset
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=goto --preset=Preset005
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=goto --preset=Preset005
 ```
 
 ### Remove Preset
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=removepreset --preset=Preset005
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=removepreset --preset=Preset005
 ```
 
 ---
@@ -239,17 +445,17 @@ node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pa
 ## 🧪 Status, Configs & Listing
 ### List Presets
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=presets
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=presets
 ```
 
 ### Get PTZ Status
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=status
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=status
 ```
 
 ### Get PTZ Config Options
 ```bash
-node /home/onvif/onvif_control.js --ip=172.2.1.194 --port=8080 --user=admin --pass=1234 --action=configoptions
+node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 --user=admin --pass=1234 --action=configoptions
 ```
 
 ---
@@ -502,6 +708,17 @@ node onvif_control.js --ip=... --port=... --user=... --pass=... --action=reboot
 node onvif_control.js --ip=... --port=... --user=... --pass=... --action=factoryreset
 ```
 
+
+
+### Aliases (kept for backward compatibility)
+
+
+
+configurations → get_configurations
+preset → goto
+presets → get_presets
+get_static_ip → get_network_interfaces
+
 ## 🧠 Expert & Troubleshooting
 
 ### Discovering Tokens and Presets
@@ -511,7 +728,7 @@ Use **ONVIF Device Manager** on Windows or Linux to:
 - Test preset positions
 
 **Wireshark** can be used to:
-- Filter ONVIF traffic using: `ip.addr == 172.2.1.194 && tcp.port == 8080`
+- Filter ONVIF traffic using: `ip.addr == 172.20.1.194 && tcp.port == 8080`
 - Use "Follow TCP stream" to view raw XML/SOAP
 
 This helps you detect:
