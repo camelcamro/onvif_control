@@ -18,7 +18,7 @@ So, i created this project.
 - Full ONVIF PTZ support via raw SOAP HTTP requests
 - WS-Security with Digest Authentication
 - Continuous Move, Absolute/Relative Move
-- Zoom in/out, Preset Save, Goto, Delete
+- Zoom in/out, Preset Save, Goto, gotoHome, Delete
 - PTZ Status, Configuration Options
 - Detailed logging (console + system log)
 - Dry run & verbose/debug modes for development
@@ -135,9 +135,6 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 - `subscribe_events_device` — Legacy subscribe via Device service (fallback)
 - `unsubscribe` — Cancel an existing subscription (by Subscription Manager URL)
 
-
-
-
 ### Other optional options
 
 | Option                            | Description                                           |
@@ -193,6 +190,8 @@ node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --a
 - `get_nodes` — List PTZ nodes
 - `get_presets` — List PTZ presets (tokens & names)
 - `goto` — Go to preset by **PresetToken**
+- `gotohomeposition` — Go to home position ( -> check via get_nodes - if supported) 
+- `home` — Go to home position (same as gotohomeposition -> check via get_nodes - if supported) 
 - `move` — Continuous pan/tilt for `--time` seconds
 - `relativemove` — Relative PT step
 - `removepreset` — Delete PTZ preset by token
@@ -249,6 +248,15 @@ Go to preset by token
 node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=goto --preset=Preset001 --token=MainStreamProfileToken
 ```
 
+### home (alias: gotohomeposition)
+
+Go to home position (check via get_nodes - if supported)
+
+```bash
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=home --token=MainStreamProfileToken
+or
+node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --action=gotohomeposition --token=MainStreamProfileToken
+```
 ### move
 
 Continuous pan/tilt for --time seconds
