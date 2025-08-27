@@ -80,7 +80,7 @@ cd /home/onvif
 sudo npm install -g minimist
 ```
 
-4. Install minimist also in the same folder as your script is located:
+4. Install xml2js also in the same folder as your script is located:
 
 ```bash
 cd /home/onvif
