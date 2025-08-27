@@ -5,22 +5,6 @@
 // Version: 1.1.9
 // Build Date: 2025-08-26
 //
-// - Backwards compatible with v1.1.8 actions & flags
-// - New actions: subscribe_events, renew_subscription, unsubscribe
-// - New flags : --mode, --push_url, --termination, --timeout, --message_limit, --subscription, --auto_renew
-//
-// Usage examples (events):
-//   node onvif_control.1.1.9.js --ip=172.20.1.172 --port=8080 --user=admin --pass=*** \
-//     --action=subscribe_events --mode=push --termination=PT300S \
-//     --push_url=http://172.20.1.103:9000/onvif_hook --debug --verbose
-//
-//   node onvif_control.1.1.9.js --action=renew_subscription \
-//     --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=2 \
-//     --user=admin --pass=*** --termination=PT300S --verbose
-//
-//   node onvif_control.1.1.9.js --action=unsubscribe \
-//     --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=2 \
-//     --user=admin --pass=*** --verbose
 
 'use strict';
 
