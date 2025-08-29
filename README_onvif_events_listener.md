@@ -887,7 +887,9 @@ Below is a complete list of actions grouped by category, with a short descriptio
   node onvif_control.js --ip=... --port=... --user=... --pass=... --action=get_static_ip
   ```
 
-
+########################################################################################################################
+#### Event-specific extended help
+ 
 
 ### Event-specific options
 
@@ -899,3 +901,144 @@ Below is a complete list of actions grouped by category, with a short descriptio
 - `--subscription <url>         Subscription Manager URL (for renew_subscription / unsubscribe)`
 - `--auto_renew                 Keep renewing automatically (subscribe_events only)`
 - `--auto_unsubscribe_on_exit   On SIGINT/SIGTERM, auto-unsubscribe (when auto_renew is active)`
+
+
+# ONVIF Events — Push/Pull Subscriptions & Listener
+**Complete Guide (Beginner‑Friendly) + Original Extended Reference**
+
+This file merges two worlds:
+- **Part A – Complete How‑To** (step‑by‑step, diagrams, troubleshooting, copy‑paste commands).
+- **Part B – Original Extended README (verbatim)** for all historic details and examples.
+
+> Target scripts: `onvif_control.js` (v1.1.9) and `onvif_control_event_listener.js` (v1.0.5).
+
+---
+
+## Part A — Complete How‑To (Recommended)
+
+### 0) What’s Push vs. Pull? (visual)
+```
+PUSH (recommended)
+Camera ──HTTP POST──▶ Listener (your machine)
+        (camera connects to you)
+
+PULL
+Client (you) ──Subscribe──▶ Camera
+Client (you) ◀─Subscription Manager URL────────────
+Client (you) ──PullMessages in a loop──────────────▶ Camera
+```
+- **Push**: You run an HTTP listener; the camera **calls you** on each event.
+- **Pull**: You must **poll** the camera periodically with `PullMessages`. Our CLI creates the subscription and exits (no built‑in poll loop).
+
+### 1) Quick Start (Push mode)
+**A. Start the listener**
+```bash
+# Listen on all interfaces, port 9000, path /onvif_hook, write to /tmp/onvif_events.log
+node onvif_control_event_listener.js \
+  --bind=0.0.0.0 --port=9000 --path=/onvif_hook \
+  --outfile=/tmp/onvif_events.log \
+  --verbose
+```
+**Sanity check** from another LAN host (should append one line to the logfile):
+```bash
+curl -d 'test' http://<LISTENER_LAN_IP>:9000/onvif_hook
+tail -n 1 /tmp/onvif_events.log
+```
+
+**B. Subscribe the camera to your listener**
+Pick one topic your camera actually advertises (see §2). Two common ones:
+- `tns1:RuleEngine/CellMotionDetector/Motion` (payload key: `IsMotion`)
+- `tns1:VideoSource/MotionAlarm` (payload key: `State`)
+
+Create a push subscription (TTL 5 minutes) to your listener’s **LAN IP**:
+```bash
+node onvif_control.js --ip=<CAM_IP> --port=<CAM_PORT> --user=<USER> --pass=<PASS> \
+  --action=subscribe_events --mode=push \
+  --push_url=http://<LISTENER_LAN_IP>:9000/onvif_hook \
+  --eventtype="tns1:RuleEngine/CellMotionDetector/Motion" \
+  --termination=PT300S --verbose
+```
+If supported, you’ll see a JSON block with a `subscription` URL. Trigger motion; the logfile should grow.
+
+> **Do not use `127.0.0.1` for `--push_url`.** That is the camera’s loopback, not your PC. Always use your listener host’s LAN IP.
+
+### 2) Discover the correct event topic
+List what the device advertises:
+```bash
+node onvif_control.js --ip=<CAM_IP> --port=<CAM_PORT> -u <USER> --pass=<PASS> \
+  --action=get_event_properties --debug
+```
+Common motion topics:
+- `tns1:RuleEngine/CellMotionDetector/Motion` → boolean **IsMotion**
+- `tns1:VideoSource/MotionAlarm` → boolean **State**
+Other useful topics: `TamperDetector/Tamper`, `Device/Trigger/DigitalInput`, etc.
+
+> Use **one topic per subscription** (`--eventtype=...`). Create multiple subscriptions if you want several topics at once.
+
+### 3) Real‑world recipes
+**A) “macro-video-soft / IPCamera / V380-like”**  
+`--eventtype="tns1:VideoSource/MotionAlarm"` (payload **State**).
+
+**B) NT98566/H264 OEM / XMEye-like**  
+`--eventtype="tns1:RuleEngine/CellMotionDetector/Motion"` (payload **IsMotion**).
+
+**C) Meari / Tuya / Cloud‑gated**  
+ONVIF events may require cloud pairing and Internet; motion must be enabled in vendor app. Blocking Internet can silence ONVIF events even if streams work.
+
+### 4) Read & filter listener output
+The listener logs **one SOAP/XML message per line** with a timestamp.
+```bash
+# Show only lines with Topic or boolean fields
+grep -E 'Topic|IsMotion|State|LogicalState' /tmp/onvif_events.log
+
+# Pretty-print a specific XML block from a single-line XML
+tr -d '\n' < /tmp/onvif_events.log \
+ | sed -n 's#.*\(<[^>]*SupportedPresetTour[^>]*>.*</[^>]*SupportedPresetTour>\).*#\1#p' \
+ | sed -E 's#><#>\n<#g'
+
+# Live view
+tail -F /tmp/onvif_events.log
+```
+
+### 5) Renew & Unsubscribe
+Subscriptions expire (TTL). Use the **Subscription Manager URL** printed by `subscribe_events`.
+```bash
+# Renew for 5 minutes
+node onvif_control.js --action=renew_subscription \
+  --subscription=http://<CAMERA>/onvif/Subscription?Idx=1 \
+  --termination=PT300S -u <USER> --pass=<PASS> --verbose
+
+# Unsubscribe
+node onvif_control.js --action=unsubscribe \
+  --subscription=http://<CAMERA>/onvif/Subscription?Idx=1 \
+  -u <USER> --pass=<PASS> --verbose
+```
+For long‑running setups, add `--auto_renew` to the subscribe command.
+
+### 6) FAQ / Troubleshooting
+- **Push OK but no events** → Use listener **LAN IP** in `--push_url`; listener bound to `0.0.0.0`; firewall open; `curl` test succeeds.  
+- **Pull returns to shell** → Normal. The CLI only creates the subscription; it doesn’t poll. Prefer push.  
+- **`/event_service` vs `/event_services`** → Both in the wild; discovery prints the one to use.  
+- **Motion RPCs not supported** → Enable motion in the vendor app; events still work.  
+- **Events stop after a while/reboot** → TTL expired; re‑subscribe or use `--auto_renew`.  
+- **App gets notifications but listener is empty** → Some models are cloud‑gated (local ONVIF events limited).  
+- **Multiple topics?** → Create separate subscriptions, one per topic.
+
+### 7) CLI quick reference (events)
+- `--action=subscribe_events | renew_subscription | unsubscribe | get_event_properties`  
+- `--mode <push|pull>` (default **push**)  
+- `--push_url <url>` e.g. `http://<LISTENER_IP>:9000/onvif_hook`  
+- `--eventtype <topic>` e.g. `"tns1:RuleEngine/CellMotionDetector/Motion"`  
+- `--termination <ISO8601>` e.g. `PT300S`  
+- `--subscription <url>` (for renew/unsubscribe)  
+- `--auto_renew` (keep process alive and renew)  
+- Usual `--ip --port --user --pass --verbose --debug` apply.
+
+---
+
+---
+
+## Part B — Original Extended README (verbatim)
+
+<!-- Merged on 2025-08-29T00:38:01.146491Z. Part B below is included verbatim from your original upload. -->
+
