@@ -106,10 +106,10 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--help`    | `-h`  | This help                                                            |
 | `--ip`      | `-i`  | Camera IP                                                            |
 | `--ip,      | `-i`  | Camera IP(s) - Supports single IP, comma-separated lists, and ranges:|
-| `                     e.g. --ip=172.20.1.171                                               |
-| `                     e.g. --ip=172.20.1.171,172.20.1.172                                  |
-| `                     e.g. --ip=172.20.1.171-198                                           |
-| `                     e.g. --ip=172.20.1.171-175,172.20.1.180                              |
+|                     |   e.g. --ip=172.20.1.171                                             |
+|                     |   e.g. --ip=172.20.1.171,172.20.1.172                                |
+|                     |   e.g. --ip=172.20.1.171-198                                         |
+|                     |   e.g. --ip=172.20.1.171-175,172.20.1.180                            |
 | `--pass`    | ``    | Password                                                             |
 | `--port`    | ``    | Camera ONVIF port (e.g. 80 or 8080)                                  |
 | `--time`    | `-t`  | Duration (s) for continuous move/zoom                                |
