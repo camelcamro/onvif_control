@@ -1,8 +1,8 @@
 
 # ONVIF Control Script
 
-**Version:** 1.1.9
-**Build Date:** 2025-08-26
+**Version:** 1.2.0
+**Build Date:** 2026-09-24
 **Author:** camel (camelcamro)
 
 ---
@@ -23,6 +23,7 @@ So, i created this project.
 - Detailed logging (console + system log)
 - Dry run & verbose/debug modes for development
 - Standalone – does **not** require `onvif-cli` or any ONVIF SDK
+- Multi-IP & Range support (--ip=172.20.1.171-198 or --ip=172.20.1.171,172.20.1.172)
 
 ---
 
@@ -99,18 +100,23 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 
 ### Mandatory Parameters
 
-| Option      | Alias | Description                                      |
-| ----------- | ----- | ------------------------------------------------ |
-| `--debug`   | `-d`  | Print arguments + raw SOAP                       |
-| `--help`    | `-h`  | This help                                        |
-| `--ip`      | `-i`  | Camera IP                                        |
-| `--pass`    | ``    | Password                                         |
-| `--port`    | ``    | Camera ONVIF port (e.g. 80 or 8080)              |
-| `--time`    | `-t`  | Duration (s) for continuous move/zoom            |
-| `--token`   | `-k`  | ProfileToken (e.g. from get_profiles)            |
-| `--user`    | `-u`  | Username (ONVIF user)                            |
-| `--verbose` | `-v`  | Verbose logs                                     |
-| `--version` | ``    | Print version                                    |
+| Option      | Alias | Description                                                          |
+| ----------- | ----- | -------------------------------------------------------------------- |
+| `--debug`   | `-d`  | Print arguments + raw SOAP                                           |
+| `--help`    | `-h`  | This help                                                            |
+| `--ip`      | `-i`  | Camera IP                                                            |
+| `--ip,      | `-i`  | Camera IP(s) - Supports single IP, comma-separated lists, and ranges:|
+| `                     e.g. --ip=172.20.1.171                                               |
+| `                     e.g. --ip=172.20.1.171,172.20.1.172                                  |
+| `                     e.g. --ip=172.20.1.171-198                                           |
+| `                     e.g. --ip=172.20.1.171-175,172.20.1.180                              |
+| `--pass`    | ``    | Password                                                             |
+| `--port`    | ``    | Camera ONVIF port (e.g. 80 or 8080)                                  |
+| `--time`    | `-t`  | Duration (s) for continuous move/zoom                                |
+| `--token`   | `-k`  | ProfileToken (e.g. from get_profiles)                                |
+| `--user`    | `-u`  | Username (ONVIF user)                                                |
+| `--verbose` | `-v`  | Verbose logs                                                         |
+| `--version` | ``    | Print version                                                        |
 
 ### Event-specific options
 
