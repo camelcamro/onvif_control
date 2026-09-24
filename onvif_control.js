@@ -2,23 +2,26 @@
 // onvif_control.js
 // ONVIF Control Script - Full SOAP Implementation + Events (subscribe/renew/unsubscribe)
 //
-// Version: 1.1.9
-// Build Date: 2025-08-26
+// Version: 1.2.0
+// Build Date: 2026-09-24
 //
+// - Multi-IP & Range support (--ip=172.20.1.171-198 or --ip=172.20.1.171,172.20.1.172)
+// - Executes sequentially per IP with strict Promises (awaits response before next IP)
+// - Hardcoded 3s socket timeout to avoid hanging on offline cameras
 // - Backwards compatible with v1.1.8 actions & flags
 // - New actions: subscribe_events, renew_subscription, unsubscribe
 // - New flags : --mode, --push_url, --termination, --timeout, --message_limit, --subscription, --auto_renew
 //
 // Usage examples (events):
-//   node onvif_control.1.1.9.js --ip=172.20.1.172 --port=8080 --user=admin --pass=*** \
+//   node onvif_control.js --ip=172.20.1.172 --port=8080 --user=admin --pass=*** \
 //     --action=subscribe_events --mode=push --termination=PT300S \
-//     --push_url=http://172.20.1.103:9000/onvif_hook --debug --verbose
+//     --push_url=http://127.0.0.1:9000/onvif_hook --debug --verbose
 //
-//   node onvif_control.1.1.9.js --action=renew_subscription \
+//   node onvif_control.js --action=renew_subscription \
 //     --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=2 \
 //     --user=admin --pass=*** --termination=PT300S --verbose
 //
-//   node onvif_control.1.1.9.js --action=unsubscribe \
+//   node onvif_control.js --action=unsubscribe \
 //     --subscription=http://172.20.1.191:8080/onvif/Subscription?Idx=2 \
 //     --user=admin --pass=*** --verbose
 
@@ -43,8 +46,8 @@ const args = require('minimist')(process.argv.slice(2), {
   ]
 });
 
-const VERSION = '1.1.9';
-const BUILD_DATE = '2025-08-26';
+const VERSION = '1.2.0';
+const BUILD_DATE = '2026-09-24';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
@@ -52,13 +55,13 @@ const WAKEUP_SIMPLE = 'wakeup_simple' in args;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Sleep after wakeup call for SOAP requests
 const WAKEUP_SLEEP_MS = 1000;
-// Timeout in milliseconds for SOAP requests
+// Timeout in milliseconds for SOAP requests (hardcoded to 3000ms for safety)
 const SOCKET_TIMEOUT_MS = 5000;
 // Guard to avoid endless GotoPreset retries when camera has 0 presets
 let GOTO_PRESET_RETRIED = false;
 
 // Discovered service endpoints (filled by GetServices / GetCapabilities)
-const DISCOVERY = { media1: null, media2: null, ptz: null, events: null };
+let DISCOVERY = { media1: null, media2: null, ptz: null, events: null };
 
 function showHelp() {
   console.log(`
@@ -68,7 +71,11 @@ function showHelp() {
     node onvif_control.js --ip=IP --port=PORT --action=<action> [options]
 
   Core options:
-    --ip, -i         Camera IP
+    --ip, -i         Camera IP(s) - Supports single IP, comma-separated lists, and ranges:
+                     e.g. --ip=172.20.1.171
+                     e.g. --ip=172.20.1.171,172.20.1.172
+                     e.g. --ip=172.20.1.171-198
+                     e.g. --ip=172.20.1.171-175,172.20.1.180
     --port           Camera ONVIF port (e.g. 80 or 8080)
     --user, -u       Username (ONVIF user)
     --pass           Password
@@ -200,6 +207,42 @@ function errorOut(msg, code = 1) {
 ['ip', 'port', 'action'].forEach(param => {
   if (!args[param]) errorOut(`Missing required parameter: --${param}`);
 });
+// === Multi-IP & Range Parser ===
+function parseIPs(ipInput) {
+  const ips = [];
+  const parts = String(ipInput).split(',');
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.includes('-')) {
+      const rangeParts = trimmed.split('-');
+      const startIp = rangeParts[0].trim();
+      const endLastOctet = parseInt(rangeParts[1].trim(), 10);
+      
+      const ipOctets = startIp.split('.');
+      if (ipOctets.length === 4 && !isNaN(endLastOctet)) {
+        const startLastOctet = parseInt(ipOctets[3], 10);
+        const prefix = ipOctets.slice(0, 3).join('.');
+        for (let i = startLastOctet; i <= endLastOctet; i++) {
+          ips.push(`${prefix}.${i}`);
+        }
+      } else {
+        ips.push(trimmed);
+      }
+    } else {
+      ips.push(trimmed);
+    }
+  }
+  return ips;
+}
+
+const targetIPs = parseIPs(args.ip);
+let activeIp = targetIPs[0];
+
+function getBaseUrl() {
+  return `http://${activeIp}${args.port ? ':' + args.port : ''}`;
+}
+
 
 function mask(obj) {
   const clone = { ...obj };
@@ -216,14 +259,14 @@ function logMessage(msg) {
   }
 }
 
-logMessage(`Called script onvif_control.js with ${process.argv.slice(2).join(' ')}`);
+logMessage(`Called script onvif_control.js for ${targetIPs.length} IP(s) with ${process.argv.slice(2).join(' ')}`);
 if (args.verbose) console.log('[INFO] Called with:', mask(args));
 if (args.debug) console.log(JSON.stringify(mask(args), null, 2));
 if (args['dry-run']) process.exit(0);
 
 // Arg shorthands
 const hostname = args.hostname;
-const ip = args.ip;
+// const ip handled via activeIp in targetIPs loop
 const netmask = args.netmask;
 const gateway = args.gateway;
 const dhcp = args.dhcp;
@@ -289,9 +332,10 @@ function wsseHeaderXml() {
 }
 
 // === Service selection & discovery ===
-const BASE_URL = `http://${ip}${args.port ? ':' + args.port : ''}`;
+// Dynamic BASE_URL handled by getBaseUrl()
 
 function serviceDefaultPath(svc) {
+  const BASE_URL = getBaseUrl();
   switch (svc) {
     case 'DEVICE': return `${BASE_URL}/onvif/device_service`;
     case 'MEDIA1':
@@ -345,23 +389,24 @@ async function discoverServices() {
   </s:Body>
 </s:Envelope>`.trim();
 
-  const xml = await rawSoap(url, nsForService('DEVICE') + '/GetCapabilities', envelope);
-  // Media & PTZ
-  {
-    const blocks = xml.match(/<tds:Capabilities>[\s\S]*?<\/tds:Capabilities>/g) || [];
-    for (const b of blocks) {
-      const mediaX = ((b.match(/<tt:Media>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
-      const ptzX   = ((b.match(/<tt:PTZ>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
-      const eventsX= ((b.match(/<tt:Events>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
-      if (mediaX) DISCOVERY.media1 = mediaX;
-      if (ptzX) DISCOVERY.ptz = ptzX;
-      if (eventsX) DISCOVERY.events = eventsX;
+  try {
+    const xml = await rawSoap(url, nsForService('DEVICE') + '/GetCapabilities', envelope);
+    // Media & PTZ
+    {
+      const blocks = xml.match(/<tds:Capabilities>[\s\S]*?<\/tds:Capabilities>/g) || [];
+      for (const b of blocks) {
+        const mediaX = ((b.match(/<tt:Media>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
+        const ptzX   = ((b.match(/<tt:PTZ>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
+        const eventsX= ((b.match(/<tt:Events>[\s\S]*?<tt:XAddr>(.*?)<\/tt:XAddr>/) || [])[1] || '').trim();
+        if (mediaX) DISCOVERY.media1 = mediaX;
+        if (ptzX) DISCOVERY.ptz = ptzX;
+        if (eventsX) DISCOVERY.events = eventsX;
+      }
     }
-  }
 
-  // Fallback: Device:GetServices (older code-path)
-  if (!DISCOVERY.media1 || !DISCOVERY.ptz) {
-    const env2 = `
+    // Fallback: Device:GetServices (older code-path)
+    if (!DISCOVERY.media1 || !DISCOVERY.ptz) {
+      const env2 = `
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
   ${wsseHeaderXml()}
   <s:Body>
@@ -370,20 +415,23 @@ async function discoverServices() {
     </tds:GetServices>
   </s:Body>
 </s:Envelope>`.trim();
-    const xml2 = await rawSoap(url, nsForService('DEVICE') + '/GetServices', env2);
-    const blocks = xml2.match(/<tds:Service>[\s\S]*?<\/tds:Service>/g) || [];
-    for (const b of blocks) {
-      const ns = ((b.match(/<tds:Namespace>(.*?)<\/tds:Namespace>/) || [])[1] || '').trim();
-      const xa = ((b.match(/<tds:XAddr>(.*?)<\/tds:XAddr>/) || [])[1] || '').trim();
-      if (!ns || !xa) continue;
-      if (ns.includes('/ver20/media/wsdl')) DISCOVERY.media2 = xa;
-      if (ns.includes('/ver10/media/wsdl')) DISCOVERY.media1 = xa;
-      if (ns.includes('/ver20/ptz/wsdl'))   DISCOVERY.ptz    = xa;
-      if (ns.includes('/ver10/events/wsdl')) DISCOVERY.events = xa;
+      const xml2 = await rawSoap(url, nsForService('DEVICE') + '/GetServices', env2);
+      const blocks = xml2.match(/<tds:Service>[\s\S]*?<\/tds:Service>/g) || [];
+      for (const b of blocks) {
+        const ns = ((b.match(/<tds:Namespace>(.*?)<\/tds:Namespace>/) || [])[1] || '').trim();
+        const xa = ((b.match(/<tds:XAddr>(.*?)<\/tds:XAddr>/) || [])[1] || '').trim();
+        if (!ns || !xa) continue;
+        if (ns.includes('/ver20/media/wsdl')) DISCOVERY.media2 = xa;
+        if (ns.includes('/ver10/media/wsdl')) DISCOVERY.media1 = xa;
+        if (ns.includes('/ver20/ptz/wsdl'))   DISCOVERY.ptz    = xa;
+        if (ns.includes('/ver10/events/wsdl')) DISCOVERY.events = xa;
+      }
     }
+  } catch (e) {
+    if (args.verbose) console.error(`[DISCOVERY WARN ${activeIp}] GetCapabilities failed, using defaults`);
   }
 
-  if (args.verbose) console.error('[DISCOVERY]', DISCOVERY);
+  if (args.verbose) console.error(`[DISCOVERY ${activeIp}]`, DISCOVERY);
   return DISCOVERY;
 }
 
@@ -414,7 +462,7 @@ function rawSoap(urlStr, actionHeader, envelope) {
       res.on('end', () => resolve(data));
     });
 
-    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout calling ${u.href}`)); });
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout (${SOCKET_TIMEOUT_MS}ms) calling ${u.href}`)); });
     req.on('error', err => reject(err));
 
     req.write(envelope);
@@ -438,7 +486,7 @@ function httpPostXml(targetUrl, xml, opts = {}) {
         'Content-Type': 'application/soap+xml; charset=utf-8',
         'Content-Length': Buffer.byteLength(xml, 'utf8')
       },
-      timeout: opts.timeoutMs || 15000,
+      timeout: opts.timeoutMs || SOCKET_TIMEOUT_MS,
       rejectUnauthorized: false
     }, (res) => {
       const chunks = [];
@@ -448,18 +496,20 @@ function httpPostXml(targetUrl, xml, opts = {}) {
         resolve({ statusCode: res.statusCode, headers: res.headers, body });
       });
     });
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout (${SOCKET_TIMEOUT_MS}ms) calling ${u.href}`)); });
     req.on('error', reject);
     req.write(xml);
     req.end();
   });
 }
 
-// === SOAP send wrapper (keeps original style) ===
+// === SOAP send wrapper (Promise-wrapped for strict sequential execution) ===
 // svc: 'PTZ' (default) | 'DEVICE' | 'MEDIA' | 'MEDIA1' | 'MEDIA2' | 'EVENTS'
 function sendSoap(action, body, cb, svc = 'PTZ') {
-  const wsse = wsseHeaderXml();
-  let actionNs = nsForService(svc, svc === 'MEDIA' || svc === 'MEDIA2');
-  const doSend = async () => {
+  return new Promise((resolve) => {
+    const wsse = wsseHeaderXml();
+    let actionNs = nsForService(svc, svc === 'MEDIA' || svc === 'MEDIA2');
+    const doSend = async () => {
     await discoverServices(); // ensure endpoints
 
     let serviceVariant = svc;
@@ -474,31 +524,31 @@ function sendSoap(action, body, cb, svc = 'PTZ') {
 </s:Envelope>`;
 
     if (args.verbose || args.debug) {
-      console.error(`\n[ENDPOINT] ${svc} → ${url}`);
+      console.error(`\n[ENDPOINT ${activeIp}] ${svc} → ${url}`);
       console.error(`REQUEST for ${action}:\n${body}\n`);
     }
 
     rawSoap(url, `${actionNs}/${action}`, envelope)
       .then(xml => {
         if (args.verbose || args.debug) {
-          console.error(`RESPONSE for ${action}:\n${xml}\n`);
-          if (args.log) logMessage(`SOAP response for ${action}: ${xml}`);
+          console.error(`RESPONSE for ${action} [${activeIp}]:\n${xml}\n`);
+          if (args.log) logMessage(`SOAP response for ${action} [${activeIp}]: ${xml}`);
         } else {
           xml2js.parseString(xml, { explicitArray:false, tagNameProcessors:[xml2js.processors.stripPrefix], attrNameProcessors:[xml2js.processors.stripPrefix] }, (err, result) => {
             if (err) {
-              console.error('[ERROR] Failed to parse XML:', err.message);
+              console.error(`[ERROR ${activeIp}] Failed to parse XML:`, err.message);
             } else {
               try {
                 const body = (result.Envelope && result.Envelope.Body) || result.Body || result;
                 const actionKey = Object.keys(body)[0];
                 const payload = body[actionKey];
-                console.log('[RESPONSE]', actionKey);
+                console.log(`[RESPONSE ${activeIp}]`, actionKey);
                 for (const k in payload) {
                   const val = payload[k];
                   console.log(`  ${k}:`, typeof val === 'string' ? val : JSON.stringify(val));
                 }
               } catch (e) {
-                console.error('[ERROR] Response structure unexpected:', e.message);
+                console.error(`[ERROR ${activeIp}] Response structure unexpected:`, e.message);
               }
             }
           });
@@ -507,20 +557,32 @@ function sendSoap(action, body, cb, svc = 'PTZ') {
         // Auto-retry flow for missing preset tokens
         if (/NoToken|preset token does not exist/i.test(xml)) {
           if (String(action).toLowerCase().includes('gotopreset')) {
-            if (GOTO_PRESET_RETRIED) { console.error('[AUTO] Preset token still invalid. No presets found or not supported. Aborting retry.'); cb && cb(); return; }
+            if (GOTO_PRESET_RETRIED) { 
+              console.error(`[AUTO ${activeIp}] Preset token still invalid. No presets found or not supported. Aborting retry.`); 
+              cb && cb(); 
+              return resolve(); 
+            }
             GOTO_PRESET_RETRIED = true;
-            console.log('[AUTO] Preset token not found → requesting GetPresets list…');
+            console.log(`[AUTO ${activeIp}] Preset token not found → requesting GetPresets list…`);
             const bodyPresets = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
             return rawSoap(pickUrlForService('PTZ'), `${nsForService('PTZ')}/GetPresets`, `<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">${wsse}<s:Body>${bodyPresets}</s:Body></s:Envelope>`)
-              .then(async () => { await sleep(WAKEUP_SLEEP_MS); console.log('[AUTO] Retrying original goto command…'); return sendSoap(action, body, cb, 'PTZ'); });
+              .then(async () => { 
+                await sleep(WAKEUP_SLEEP_MS); 
+                console.log(`[AUTO ${activeIp}] Retrying original goto command…`); 
+                await sendSoap(action, body, cb, 'PTZ'); 
+                resolve(); 
+              });
           }
         }
 
         cb && cb();
-      })
-      .catch(err => {
-        errorOut(`HTTP/SOAP error on ${action}: ${err.message}`);
-      });
+          resolve();
+        })
+        .catch(err => {
+          console.error(`[ERROR ${activeIp}] HTTP/SOAP error on ${action}: ${err.message}`);
+          cb && cb();
+          resolve();
+        });
   };
 
   // Wakeup chain (PTZ only)
@@ -535,19 +597,20 @@ function sendSoap(action, body, cb, svc = 'PTZ') {
   } else {
     doSend();
   }
+  });
 }
 
 async function wakeupSimple(cb) {
-  if (args.verbose) console.log('[WAKEUP_SIMPLE] Sending GetPresets...');
+  if (args.verbose) console.log(`[WAKEUP_SIMPLE ${activeIp}] Sending GetPresets...`);
   const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>${PROFILE_TOKEN}</ProfileToken></tptz:GetPresets>`;
-  sendSoap('GetPresets', body, async () => {
+  return sendSoap('GetPresets', body, async () => {
     await sleep(WAKEUP_SLEEP_MS);
     cb && cb();
   }, 'PTZ');
 }
 
 function wakeupSequence(cb) {
-  if (args.verbose) console.log('[WAKEUP] Sending Wake-up Sequence (GetNodes, GetConfigurations, GetPresets)…');
+  if (args.verbose) console.log(`[WAKEUP ${activeIp}] Sending Wake-up Sequence (GetNodes, GetConfigurations, GetPresets)…`);
   const steps = [
     () => sendSoap('GetNodes', '<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>', async () => {
       await sleep(WAKEUP_SLEEP_MS);
@@ -593,7 +656,7 @@ function dateDiffMs(aIso, bIso) {
 const ACTIONS = {
   // -------------------- Events block --------------------
   async subscribe_events() {
-    if (!ip) errorOut('--ip is required');
+    if (!activeIp) errorOut('--ip is required');
     await discoverServices();
     const eventsUrl = pickUrlForService('EVENTS');
 
@@ -606,13 +669,13 @@ const ACTIONS = {
         }
         return resp;
       } catch (err) {
-        if (args.verbose) console.error('[WARN] EVENTS endpoint failed, trying DEVICE…', err && err.message ? err.message : String(err));
+        if (args.verbose) console.error(`[WARN ${activeIp}] EVENTS endpoint failed, trying DEVICE…`, err && err.message ? err.message : String(err));
         const resp2 = await httpPostXml(deviceUrl, xml);
         return resp2;
       }
     };
 
-    if (args.verbose) console.error('[ENDPOINT] EVENTS →', eventsUrl);
+    if (args.verbose) console.error(`[ENDPOINT ${activeIp}] EVENTS →`, eventsUrl);
 
     // Build envelopes
     const wsse = wsseHeaderXml();
@@ -665,9 +728,9 @@ const ACTIONS = {
         const address = matchTag(resp.body, /<(?:\w+:)?SubscriptionReference>\s*<(?:\w+:)?Address>([^<]+)<\/(?:\w+:)?Address>/i);
         const current = matchTag(resp.body, /<(?:\w+:)?CurrentTime>([^<]+)<\/(?:\w+:)?CurrentTime>/i);
         const term    = matchTag(resp.body, /<(?:\w+:)?TerminationTime>([^<]+)<\/(?:\w+:)?TerminationTime>/i);
-        if (!address) errorOut('No SubscriptionReference.Address in Subscribe (push) response');
+        if (!address) errorOut(`[${activeIp}] No SubscriptionReference.Address in Subscribe (push) response`);
         subObj = { subscription: address, currentTime: current, terminationTime: term };
-        if (args.verbose) console.log('[INFO] Push subscription created');
+        if (args.verbose) console.log(`[INFO ${activeIp}] Push subscription created`);
       } else {
         // Pull point first
         if (args.debug) console.error('REQUEST CreatePullPointSubscription:\n', envelopePullCreate);
@@ -680,16 +743,16 @@ const ACTIONS = {
           const address = matchTag(resp2.body, /<(?:\w+:)?SubscriptionReference>\s*<(?:\w+:)?Address>([^<]+)<\/(?:\w+:)?Address>/i);
           const current = matchTag(resp2.body, /<(?:\w+:)?CurrentTime>([^<]+)<\/(?:\w+:)?CurrentTime>/i);
           const term    = matchTag(resp2.body, /<(?:\w+:)?TerminationTime>([^<]+)<\/(?:\w+:)?TerminationTime>/i);
-          if (!address) errorOut('No SubscriptionReference.Address in Subscribe (pull) response');
+          if (!address) errorOut(`[${activeIp}] No SubscriptionReference.Address in Subscribe (pull) response`);
           subObj = { subscription: address, currentTime: current, terminationTime: term };
         } else {
           const address = matchTag(resp1.body, /<(?:\w+:)?SubscriptionReference>\s*<(?:\w+:)?Address>([^<]+)<\/(?:\w+:)?Address>/i);
           const current = matchTag(resp1.body, /<(?:\w+:)?CurrentTime>([^<]+)<\/(?:\w+:)?CurrentTime>/i);
           const term    = matchTag(resp1.body, /<(?:\w+:)?TerminationTime>([^<]+)<\/(?:\w+:)?TerminationTime>/i);
-          if (!address) errorOut('No SubscriptionReference.Address in CreatePullPointSubscription response');
+          if (!address) errorOut(`[${activeIp}] No SubscriptionReference.Address in CreatePullPointSubscription response`);
           subObj = { subscription: address, currentTime: current, terminationTime: term };
         }
-        if (args.verbose) console.log('[INFO] Pull subscription created');
+        if (args.verbose) console.log(`[INFO ${activeIp}] Pull subscription created`);
       }
 
       console.log(JSON.stringify({
@@ -704,7 +767,7 @@ const ACTIONS = {
           : isoToMs(termination);
         if (!ttlMs || ttlMs <= 0) ttlMs = isoToMs(termination);
         let renewMs = Math.max(5000, Math.floor(ttlMs * 0.7));
-        if (args.verbose) console.log(`[INFO] auto_renew active; first renew in ~${Math.round(renewMs/1000)}s`);
+        if (args.verbose) console.log(`[INFO ${activeIp}] auto_renew active; first renew in ~${Math.round(renewMs/1000)}s`);
         const subUrl = subObj.subscription;
 
         async function doRenewLoop() {
@@ -713,12 +776,12 @@ const ACTIONS = {
             const newTtlMs = r.currentTime && r.terminationTime ? dateDiffMs(r.currentTime, r.terminationTime) : null;
             if (newTtlMs && newTtlMs > 0) {
               renewMs = Math.max(5000, Math.floor(newTtlMs * 0.7));
-              if (args.verbose) console.log(`[INFO] renew ok; next in ~${Math.round(renewMs/1000)}s`);
+              if (args.verbose) console.log(`[INFO ${activeIp}] renew ok; next in ~${Math.round(renewMs/1000)}s`);
             } else if (args.verbose) {
-              console.log('[WARN] renew ok; TTL not provided, keeping previous interval');
+              console.log(`[WARN ${activeIp}] renew ok; TTL not provided, keeping previous interval`);
             }
           } catch (e) {
-            console.error('[ERROR] renew failed:', e.message);
+            console.error(`[ERROR ${activeIp}] renew failed:`, e.message);
             renewMs = Math.max(10000, Math.floor(renewMs / 2));
           } finally {
             timer = setTimeout(doRenewLoop, renewMs);
@@ -745,7 +808,7 @@ const ACTIONS = {
     if (!subscriptionUrlArg) errorOut('Missing --subscription');
     try {
       const r = await ACTIONS._renew_internal(subscriptionUrlArg);
-      if (args.verbose) console.log('[INFO] renew ok');
+      if (args.verbose) console.log(`[INFO ${activeIp}] renew ok`);
       console.log(JSON.stringify({
         currentTime: r.currentTime || null,
         terminationTime: r.terminationTime || null
@@ -759,7 +822,7 @@ const ACTIONS = {
     if (!subscriptionUrlArg) errorOut('Missing --subscription');
     try {
       await ACTIONS._unsubscribe_internal(subscriptionUrlArg);
-      if (args.verbose) console.log('[INFO] unsubscribe ok');
+      if (args.verbose) console.log(`[INFO ${activeIp}] unsubscribe ok`);
     } catch (e) {
       errorOut(e.message);
     }
@@ -806,7 +869,7 @@ const ACTIONS = {
         <PanTilt x="${args.pan}" y="${args.tilt}" xmlns="http://www.onvif.org/ver10/schema"/>
       </Velocity>
     </tptz:ContinuousMove>`;
-    sendSoap('ContinuousMove', body, () => {
+    return sendSoap('ContinuousMove', body, () => {
       setTimeout(() => ACTIONS.stop(true, false), duration);
     }, 'PTZ');
   },
@@ -815,7 +878,7 @@ const ACTIONS = {
     const body = `<tptz:GotoHomePosition xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GotoHomePosition>`;
-    sendSoap('GotoHomePosition', body, null, 'PTZ');
+    return sendSoap('GotoHomePosition', body, null, 'PTZ');
   },
 
   zoom() {
@@ -826,7 +889,7 @@ const ACTIONS = {
         <Zoom x="${args.zoom}" xmlns="http://www.onvif.org/ver10/schema"/>
       </Velocity>
     </tptz:ContinuousMove>`;
-    sendSoap('ContinuousMove', body, () => {
+    return sendSoap('ContinuousMove', body, () => {
       setTimeout(() => ACTIONS.stop(false, true), duration);
     }, 'PTZ');
   },
@@ -836,7 +899,7 @@ const ACTIONS = {
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
       <PanTilt>${pan}</PanTilt><Zoom>${zoom}</Zoom>
     </tptz:Stop>`;
-    sendSoap('Stop', body, null, 'PTZ');
+    return sendSoap('Stop', body, null, 'PTZ');
   },
 
   goto() {
@@ -845,7 +908,7 @@ const ACTIONS = {
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
       <PresetToken>${args.preset}</PresetToken>
     </tptz:GotoPreset>`;
-    sendSoap('GotoPreset', body, null, 'PTZ');
+    return sendSoap('GotoPreset', body, null, 'PTZ');
   },
 
   setpreset() {
@@ -854,7 +917,7 @@ const ACTIONS = {
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
       <PresetName>${args.presetname}</PresetName>
     </tptz:SetPreset>`;
-    sendSoap('SetPreset', body, null, 'PTZ');
+    return sendSoap('SetPreset', body, null, 'PTZ');
   },
 
   removepreset() {
@@ -863,21 +926,21 @@ const ACTIONS = {
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
       <PresetToken>${args.preset}</PresetToken>
     </tptz:RemovePreset>`;
-    sendSoap('RemovePreset', body, null, 'PTZ');
+    return sendSoap('RemovePreset', body, null, 'PTZ');
   },
 
   get_presets() {
     const body = `<tptz:GetPresets xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GetPresets>`;
-    sendSoap('GetPresets', body, null, 'PTZ');
+    return sendSoap('GetPresets', body, null, 'PTZ');
   },
 
   status() {
     const body = `<tptz:GetStatus xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
     </tptz:GetStatus>`;
-    sendSoap('GetStatus', body, null, 'PTZ');
+    return sendSoap('GetStatus', body, null, 'PTZ');
   },
 
   absolutemove() {
@@ -889,7 +952,7 @@ const ACTIONS = {
         ${'zoom' in args ? `<Zoom x="${args.zoom}" xmlns="http://www.onvif.org/ver10/schema"/>` : ''}
       </Position>
     </tptz:AbsoluteMove>`;
-    sendSoap('AbsoluteMove', body, null, 'PTZ');
+    return sendSoap('AbsoluteMove', body, null, 'PTZ');
   },
 
   relativemove() {
@@ -901,24 +964,24 @@ const ACTIONS = {
         ${'zoom' in args ? `<Zoom x="${args.zoom}" xmlns="http://www.onvif.org/ver10/schema"/>` : ''}
       </Translation>
     </tptz:RelativeMove>`;
-    sendSoap('RelativeMove', body, null, 'PTZ');
+    return sendSoap('RelativeMove', body, null, 'PTZ');
   },
 
   configoptions() {
     const body = `<tptz:GetConfigurationOptions xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ConfigurationToken>${PROFILE_TOKEN}</ConfigurationToken>
     </tptz:GetConfigurationOptions>`;
-    sendSoap('GetConfigurationOptions', body, null, 'PTZ');
+    return sendSoap('GetConfigurationOptions', body, null, 'PTZ');
   },
 
   reboot() {
     const body = `<tds:SystemReboot xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('SystemReboot', body, null, 'DEVICE');
+    return sendSoap('SystemReboot', body, null, 'DEVICE');
   },
 
   factoryreset() {
     const body = `<tds:FactoryReset xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('FactoryReset', body, null, 'DEVICE');
+    return sendSoap('FactoryReset', body, null, 'DEVICE');
   },
 
   setdatetime() {
@@ -950,14 +1013,14 @@ const ACTIONS = {
       </tds:UTCDateTime>
     </tds:SetSystemDateAndTime>`;
 
-    sendSoap('SetSystemDateAndTime', body, null, 'DEVICE');
+    return sendSoap('SetSystemDateAndTime', body, null, 'DEVICE');
   },
 
   get_snapshot_uri() {
     const body = `<trt:GetSnapshotUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
       <trt:ProfileToken>${PROFILE_TOKEN}</trt:ProfileToken>
     </trt:GetSnapshotUri>`;
-    sendSoap('GetSnapshotUri', body, null, 'MEDIA'); // will choose media2 if available
+    return sendSoap('GetSnapshotUri', body, null, 'MEDIA'); // will choose media2 if available
   },
 
   get_stream_uri() {
@@ -970,7 +1033,7 @@ const ACTIONS = {
       </trt:StreamSetup>
       <trt:ProfileToken>${PROFILE_TOKEN}</trt:ProfileToken>
     </trt:GetStreamUri>`;
-    sendSoap('GetStreamUri', body, null, 'MEDIA');
+    return sendSoap('GetStreamUri', body, null, 'MEDIA');
   },
 
   get_profiles() {
@@ -980,12 +1043,12 @@ const ACTIONS = {
     // Media v1
     const bodyV1 = `<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl"/>`;
 
-    discoverServices()
+    return discoverServices()
       .then(() => {
         if (DISCOVERY.media2) {
-          sendSoap('GetProfiles', bodyV2, null, 'MEDIA2');
+          return sendSoap('GetProfiles', bodyV2, null, 'MEDIA2');
         } else {
-          sendSoap('GetProfiles', bodyV1, null, 'MEDIA1');
+          return sendSoap('GetProfiles', bodyV1, null, 'MEDIA1');
         }
       })
       .catch(err => errorOut(`Discovery failed: ${err.message}`));
@@ -995,7 +1058,7 @@ const ACTIONS = {
     const body = `<trt:GetVideoEncoderConfiguration xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
       <trt:ConfigurationToken>${PROFILE_TOKEN}</trt:ConfigurationToken>
     </trt:GetVideoEncoderConfiguration>`;
-    sendSoap('GetVideoEncoderConfiguration', body, null, 'MEDIA');
+    return sendSoap('GetVideoEncoderConfiguration', body, null, 'MEDIA');
   },
 
   set_video_encoder_configuration() {
@@ -1014,17 +1077,17 @@ const ACTIONS = {
       </trt:Configuration>
       <trt:ForcePersistence>true</trt:ForcePersistence>
     </trt:SetVideoEncoderConfiguration>`;
-    sendSoap('SetVideoEncoderConfiguration', body, null, 'MEDIA');
+    return sendSoap('SetVideoEncoderConfiguration', body, null, 'MEDIA');
   },
 
   get_system_date_and_time() {
     const body = `<tds:GetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetSystemDateAndTime', body, null, 'DEVICE');
+    return sendSoap('GetSystemDateAndTime', body, null, 'DEVICE');
   },
 
   get_system_info() {
     const body = `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetDeviceInformation', body, null, 'DEVICE');
+    return sendSoap('GetDeviceInformation', body, null, 'DEVICE');
   },
 
   get_device_information() {
@@ -1034,17 +1097,17 @@ const ACTIONS = {
 
   get_capabilities() {
     const body = `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetCapabilities', body, null, 'DEVICE');
+    return sendSoap('GetCapabilities', body, null, 'DEVICE');
   },
 
   get_network_interfaces() {
     const body = `<tds:GetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetNetworkInterfaces', body, null, 'DEVICE');
+    return sendSoap('GetNetworkInterfaces', body, null, 'DEVICE');
   },
 
   set_network_interfaces() {
     const dhcpFlag = dhcp === '1' ? 'true' : 'false';
-    if (!ip || !netmask) errorOut('Missing --ip or --netmask');
+    if (!activeIp || !netmask) errorOut('Missing --ip or --netmask');
     const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
       <tds:InterfaceToken>eth0</tds:InterfaceToken>
       <tds:NetworkInterface>
@@ -1052,7 +1115,7 @@ const ACTIONS = {
         <tt:IPv4>
           <tt:Enabled>true</tt:Enabled>
           <tt:Manual>
-            <tt:Address>${ip}</tt:Address>
+            <tt:Address>${activeIp}</tt:Address>
             <tt:PrefixLength>${netmaskToPrefix(netmask)}</tt:PrefixLength>
             
           </tt:Manual>
@@ -1060,12 +1123,12 @@ const ACTIONS = {
         </tt:IPv4>
       </tds:NetworkInterface>
     </tds:SetNetworkInterfaces>`;
-    sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
+    return sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
   },
 
   get_users() {
     const body = `<tds:GetUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetUsers', body, null, 'DEVICE');
+    return sendSoap('GetUsers', body, null, 'DEVICE');
   },
 
   add_user() {
@@ -1077,7 +1140,7 @@ const ACTIONS = {
         <tt:UserLevel xmlns:tt="http://www.onvif.org/ver10/schema">${newLevel}</tt:UserLevel>
       </tds:User>
     </tds:CreateUsers>`;
-    sendSoap('CreateUsers', body, null, 'DEVICE');
+    return sendSoap('CreateUsers', body, null, 'DEVICE');
   },
 
   delete_user() {
@@ -1085,7 +1148,7 @@ const ACTIONS = {
     const body = `<tds:DeleteUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
       <tds:Username>${delUser}</tds:Username>
     </tds:DeleteUsers>`;
-    sendSoap('DeleteUsers', body, null, 'DEVICE');
+    return sendSoap('DeleteUsers', body, null, 'DEVICE');
   },
 
   sethostname() {
@@ -1093,7 +1156,7 @@ const ACTIONS = {
     const body = `<tds:SetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
       <tds:Name>${hostname}</tds:Name>
     </tds:SetHostname>`;
-    sendSoap('SetHostname', body, null, 'DEVICE');
+    return sendSoap('SetHostname', body, null, 'DEVICE');
   },
 
   set_dns() {
@@ -1103,12 +1166,12 @@ const ACTIONS = {
       <tds:FromDHCP>false</tds:FromDHCP>
       ${dnsBlocks}
     </tds:SetDNS>`;
-    sendSoap('SetDNS', body, null, 'DEVICE');
+    return sendSoap('SetDNS', body, null, 'DEVICE');
   },
 
   get_dns() {
     const body = `<tds:GetDNS xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetDNS', body, null, 'DEVICE');
+    return sendSoap('GetDNS', body, null, 'DEVICE');
   },
 
   set_ntp() {
@@ -1120,7 +1183,7 @@ const ACTIONS = {
         <tt:IPv4Address>${ntp}</tt:IPv4Address>
       </tds:NTPManual>
     </tds:SetNTP>`;
-    sendSoap('SetNTP', body, null, 'DEVICE');
+    return sendSoap('SetNTP', body, null, 'DEVICE');
   },
 
   reset_password() {
@@ -1131,24 +1194,24 @@ const ACTIONS = {
         <tt:Password>${newpass_reset}</tt:Password>
       </tds:User>
     </tds:SetUser>`;
-    sendSoap('SetUser', body, null, 'DEVICE');
+    return sendSoap('SetUser', body, null, 'DEVICE');
   },
 
   get_event_properties() {
     // Use Events endpoint (tev) for standards-compliant call
     const body = `<tev:GetEventProperties xmlns:tev="http://www.onvif.org/ver10/events/wsdl"/>`;
-    sendSoap('GetEventProperties', body, null, 'EVENTS');
+    return sendSoap('GetEventProperties', body, null, 'EVENTS');
   },
 
   subscribe_events_device() {
     const body = `<tev:Subscribe xmlns:tev="http://www.onvif.org/ver10/events/wsdl"/>`;
-    sendSoap('Subscribe', body, null, 'DEVICE');
+    return sendSoap('Subscribe', body, null, 'DEVICE');
   },
 
   get_motion_detection() {
     // Many cams expose motion via device or analytics extensions; keep as-is
     const body = `<tmd:GetMotionDetection xmlns:tmd="http://www.onvif.org/ver10/schema"/>`;
-    sendSoap('GetMotionDetection', body, null, 'DEVICE');
+    return sendSoap('GetMotionDetection', body, null, 'DEVICE');
   },
 
   set_motion_detection() {
@@ -1156,13 +1219,13 @@ const ACTIONS = {
     const body = `<tmd:SetMotionDetection xmlns:tmd="http://www.onvif.org/ver10/schema">
       <tmd:Enabled>${enable_motion}</tmd:Enabled>
     </tmd:SetMotionDetection>`;
-    sendSoap('SetMotionDetection', body, null, 'DEVICE');
+    return sendSoap('SetMotionDetection', body, null, 'DEVICE');
   },
 
   configurations() {
     // Alias for GetConfigurations (PTZ)
     const body = `<tptz:GetConfigurations xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
-    sendSoap('GetConfigurations', body, null, 'PTZ');
+    return sendSoap('GetConfigurations', body, null, 'PTZ');
   },
 
   get_configurations() {
@@ -1171,8 +1234,9 @@ const ACTIONS = {
 
   get_nodes() {
     const body = `<tptz:GetNodes xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"/>`;
-    sendSoap('GetNodes', body, null, 'PTZ');
+    return sendSoap('GetNodes', body, null, 'PTZ');
   },
+
   presets() {
     // Alias to 'get_presets'
     this.get_presets();
@@ -1196,7 +1260,7 @@ const ACTIONS = {
 
   gethostname() {
     const body = `<tds:GetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>`;
-    sendSoap('GetHostname', body, null, 'DEVICE');
+    return sendSoap('GetHostname', body, null, 'DEVICE');
   },
 
   get_system_logs() {
@@ -1205,13 +1269,13 @@ const ACTIONS = {
     const body = `<tds:GetSystemLog xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
       <tds:LogType>${type}</tds:LogType>
     </tds:GetSystemLog>`;
-    sendSoap('GetSystemLog', body, null, 'DEVICE');
+    return sendSoap('GetSystemLog', body, null, 'DEVICE');
   },
 
   set_static_ip() {
     // Compatibility shim: call set_network_interfaces with DHCP=false
     const dhcpFlag = 'false';
-    if (!ip || !netmask) errorOut('Missing --ip or --netmask');
+    if (!activeIp || !netmask) errorOut('Missing --ip or --netmask');
     const body = `<tds:SetNetworkInterfaces xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
       <tds:InterfaceToken>eth0</tds:InterfaceToken>
       <tds:NetworkInterface>
@@ -1219,7 +1283,7 @@ const ACTIONS = {
         <tt:IPv4>
           <tt:Enabled>true</tt:Enabled>
           <tt:Manual>
-            <tt:Address>${ip}</tt:Address>
+            <tt:Address>${activeIp}</tt:Address>
             <tt:PrefixLength>${netmaskToPrefix(netmask)}</tt:PrefixLength>
             
           </tt:Manual>
@@ -1227,7 +1291,7 @@ const ACTIONS = {
         </tt:IPv4>
       </tds:NetworkInterface>
     </tds:SetNetworkInterfaces>`;
-    sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
+    return sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
   },
 
   enable_dhcp() {
@@ -1242,11 +1306,12 @@ const ACTIONS = {
         </tt:IPv4>
       </tds:NetworkInterface>
     </tds:SetNetworkInterfaces>`;
-    sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
+    return sendSoap('SetNetworkInterfaces', body, null, 'DEVICE');
   },
+
   // NEW: Device:GetServices to print XAddrs (Media/PTZ)
   get_services() {
-    discoverServices()
+    return discoverServices()
       .then(() => {
         console.log(JSON.stringify(DISCOVERY, null, 2));
       })
@@ -1262,6 +1327,24 @@ function netmaskToPrefix(mask) {
   return bits.split('1').length - 1; // count ones
 }
 
-const act = String(args.action || '').toLowerCase();
-if (!ACTIONS[act]) errorOut(`Unsupported action: ${act}`);
-ACTIONS[act]();
+// === MAIN MULTI-IP EXECUTION LOOP ===
+(async () => {
+  const act = String(args.action || '').toLowerCase();
+  if (!ACTIONS[act]) errorOut(`Unsupported action: ${act}`);
+
+  if (args.verbose) console.log(`[INFO] Executing action '${act}' for ${targetIPs.length} IP(s)...`);
+
+  for (const currentIp of targetIPs) {
+    activeIp = currentIp;
+    DISCOVERY = { media1: null, media2: null, ptz: null, events: null };
+    GOTO_PRESET_RETRIED = false;
+
+    if (args.verbose) console.log(`\n>>> Processing camera IP: ${currentIp}`);
+    await ACTIONS[act]();
+    
+    await sleep(100);
+  }
+
+  if (args.verbose) console.log('\n[INFO] All IP tasks finished.');
+  process.exit(0);
+})();
