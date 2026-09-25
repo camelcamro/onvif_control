@@ -2,8 +2,8 @@
 // onvif_control.js
 // ONVIF Control Script - Full SOAP Implementation + Events (subscribe/renew/unsubscribe)
 //
-// Version: 1.2.0
-// Build Date: 2026-09-24
+// Version: 1.2.1
+// Build Date: 2026-09-25
 //
 // - Multi-IP & Range support (--ip=172.20.1.171-198 or --ip=172.20.1.171,172.20.1.172)
 // - Executes sequentially per IP with strict Promises (awaits response before next IP)
@@ -11,6 +11,11 @@
 // - Backwards compatible with v1.1.8 actions & flags
 // - New actions: subscribe_events, renew_subscription, unsubscribe
 // - New flags : --mode, --push_url, --termination, --timeout, --message_limit, --subscription, --auto_renew
+// - v1.2.1: CamHi/HiSilicon CGI extension: virtual presets 900-911 (read raw / set ONE value, fire & forget),
+//           actions camhi_get + camhi_set_raw, CGI path fallback (/web/cgi-bin -> /cgi-bin),
+//           --cgi_port (default 80).
+//           Smart-Tracking (901/902) now sets ONLY smartrack_enable (v1.2.0 also overwrote
+//           LED, alarm mask, PTZ speed and cruise laps).
 //
 // Usage examples (events):
 //   node onvif_control.js --ip=172.20.1.172 --port=8080 --user=admin --pass=*** \
@@ -42,12 +47,12 @@ const args = require('minimist')(process.argv.slice(2), {
   // Keep strings for tokens & new event flags
   string: [
     'token','k','preset','e','presetname','n',
-    'push_url','termination','timeout','subscription','eventtype'
+    'push_url','termination','timeout','subscription','eventtype','raw'
   ]
 });
 
-const VERSION = '1.2.0';
-const BUILD_DATE = '2026-09-24';
+const VERSION = '1.2.1';
+const BUILD_DATE = '2026-09-25';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
@@ -97,7 +102,7 @@ function showHelp() {
     get_configurations           List PTZ configurations
     get_nodes                    List PTZ nodes
     get_presets                  List PTZ presets (tokens & names)
-    goto                         Go to preset by token *custom special token: Preset901=SmartTrackOn / Preset902=SmartTrackOff)
+    goto                         Go to preset by token (Preset900-Preset911 = CamHi virtual presets, see [CamHi])
     gotohomeposition             Go to PTZ Home position
     move                         Continuous pan/tilt for --time seconds
     relativemove                 Relative PT step
@@ -137,6 +142,17 @@ function showHelp() {
     setdatetime                  Set local time/timezone to current host time
     sethostname                  Set device hostname
 
+  [CamHi / HiSilicon CGI]  (web port, default 80 -> --cgi_port; NOT the ONVIF --port)
+    camhi_get                    Read all CamHi values, raw output (alias: camhi_raw_get)
+    camhi_set_raw                Send a raw set payload: --raw="cmd=setlightattr&-light_enable=off"
+    set_smart_track              --smart_track=<1|0|on|off> (alias: smarttrack)
+    Virtual presets (--action=goto --preset=PresetNNN), ONE value each (fire & forget):
+      Preset900  read all values (raw)       Preset901/902  Smart-Tracking ON/OFF
+      Preset903/904  status LED ON/OFF       Preset905/906  no motion alarm during PTZ move ON/OFF
+      Preset907/908  center after self check ON/OFF
+      Preset909/910/911  PTZ speed FAST/MEDIUM/SLOW (0/1/2)
+    Never set: poweronpresetindex, poweronscanenable (see README)
+
   [Events / Detection]
     get_event_properties         Get ONVIF event capabilities
     get_motion_detection         Read motion detection settings
@@ -165,6 +181,7 @@ function showHelp() {
 
   Other optional options (unchanged):
     --bitrate                     Bitrate in kbps (set_video_encoder_configuration)
+    --cgi_port                    CamHi CGI web port (default 80)
     --codec                       Codec (e.g. H264)
     --datetime                    Manual UTC datetime (setdatetime override)
     --del_username                Username to delete (delete_user)
@@ -183,6 +200,7 @@ function showHelp() {
     --pan, -p                     Pan value
     --preset=<NAME>, -e           Preset name (setpreset) or for legacy alias
     --presetname=<NAME>, -n       Preset name (setpreset)
+    --raw                         Raw CamHi set payload (camhi_set_raw)
     --resolution                  WidthxHeight (set_video_encoder_configuration)
     --tilt, -y                    Tilt value
     --username                    Target username (reset_password)
@@ -539,6 +557,151 @@ function httpPostForm(targetUrl, postData) {
     req.write(postData);
     req.end();
   });
+}
+
+
+// ===================== CamHi / HiSilicon CGI helpers =====================
+// CGI paths: tried in this order for every request; on error / 404 the next path is tried.
+const CAMHI_CGI_PATHS = ['/web/cgi-bin/hi3510/param.cgi', '/cgi-bin/hi3510/param.cgi'];
+const CAMHI_GET_CMDS = ['getmotorattr', 'getsmartrackattr', 'getlightattr'];
+
+// NEVER set these fields (verified 2026-09-25) - not used by any virtual preset:
+//  poweronpresetindex: reads 0, but 0 and -1 are rejected with "[Error]Param error."
+//                      -> the whole request is dropped; once set to >=1 it cannot go back to 0
+//  poweronscanenable : answers "[Succeed]" but the value is not stored
+
+// PTZ speed values (verified 2026-09-25 on .198 via web UI "Terminal -> PTZ speed"):
+// 0 = Fast, 1 = Medium, 2 = Slow; 3 is rejected with "[Error]Param error."
+const CAMHI_SPEED = { FAST: '0', MEDIUM: '1', SLOW: '2' };
+
+// Virtual presets (goto --preset=PresetNNN or NNN). One value per preset.
+const CAMHI_VIRTUAL_PRESETS = {
+  900: { label: 'Read all CamHi values (raw)', read: true },
+  901: { label: 'Smart-Tracking ON',            cmd: 'setsmartrackattr', get: 'getsmartrackattr', params: { smartrack_enable: '1' } },
+  902: { label: 'Smart-Tracking OFF',           cmd: 'setsmartrackattr', get: 'getsmartrackattr', params: { smartrack_enable: '0' } },
+  903: { label: 'Status LED ON',                cmd: 'setlightattr',     get: 'getlightattr',     params: { light_enable: 'on' } },
+  904: { label: 'Status LED OFF',               cmd: 'setlightattr',     get: 'getlightattr',     params: { light_enable: 'off' } },
+  905: { label: 'Alarm mask during PTZ move ON (no motion alarms while moving)',
+                                                cmd: 'setmotorattr',     get: 'getmotorattr',     params: { ptzalarmmask: 'on' } },
+  906: { label: 'Alarm mask during PTZ move OFF', cmd: 'setmotorattr',   get: 'getmotorattr',     params: { ptzalarmmask: 'off' } },
+  907: { label: 'Center after self check ON',   cmd: 'setmotorattr',     get: 'getmotorattr',     params: { movehome: 'on' } },
+  908: { label: 'Center after self check OFF',  cmd: 'setmotorattr',     get: 'getmotorattr',     params: { movehome: 'off' } },
+  909: { label: 'PTZ speed FAST',               cmd: 'setmotorattr',     get: 'getmotorattr',     params: { panspeed: CAMHI_SPEED.FAST,   tiltspeed: CAMHI_SPEED.FAST } },
+  910: { label: 'PTZ speed MEDIUM',             cmd: 'setmotorattr',     get: 'getmotorattr',     params: { panspeed: CAMHI_SPEED.MEDIUM, tiltspeed: CAMHI_SPEED.MEDIUM } },
+  911: { label: 'PTZ speed SLOW',               cmd: 'setmotorattr',     get: 'getmotorattr',     params: { panspeed: CAMHI_SPEED.SLOW,   tiltspeed: CAMHI_SPEED.SLOW } },
+};
+
+// Working CGI path per IP (valid for this run only) - tried first on the next request
+const camhiPathCache = new Map();
+
+// CGI runs on the camera's web port (default 80), NOT on the ONVIF port (--port)
+function camhiUrl(path, query) {
+  const port = args.cgi_port || 80;
+  return `http://${activeIp}${String(port) === '80' ? '' : ':' + port}${path}${query ? '?' + query : ''}`;
+}
+
+// Parse 'var name="value";' lines into an object
+function camhiParseVars(body) {
+  const vars = {};
+  const re = /var\s+(\w+)\s*=\s*"([^"]*)"\s*;/g;
+  let m;
+  while ((m = re.exec(body || '')) !== null) vars[m[1]] = m[2];
+  return vars;
+}
+
+// "Error 404 ... invalid request" = wrong path OR (old firmware) unknown command
+function camhiIsNotSupported(res) {
+  return res.statusCode === 404 || /Error\s*404|invalid request/i.test(res.body || '');
+}
+
+// Plain HTTP GET with Basic Auth (CamHi CGI)
+function httpGetBasic(targetUrl) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(targetUrl);
+    const authHeader = 'Basic ' + Buffer.from(`${args.user || 'admin'}:${args.pass || ''}`).toString('base64');
+    const req = http.request({
+      hostname: u.hostname,
+      port: u.port || 80,
+      path: u.pathname + (u.search || ''),
+      method: 'GET',
+      headers: { 'Authorization': authHeader },
+      timeout: SOCKET_TIMEOUT_MS
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('end', () => resolve({ statusCode: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout (${SOCKET_TIMEOUT_MS}ms) calling ${u.href}`)); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+// Send one CGI request with path fallback:
+//   try /web/cgi-bin/... first (or the path that worked before for this IP);
+//   on network error, HTTP error or "404 / invalid request" -> try the other path.
+// method 'GET': data = query string | method 'POST': data = form payload
+// Returns { res, path, ok } - ok=false when no path accepted the request (res = last answer).
+async function camhiRequest(method, data) {
+  const cached = camhiPathCache.get(activeIp);
+  const paths = cached ? [cached, ...CAMHI_CGI_PATHS.filter(p => p !== cached)] : CAMHI_CGI_PATHS;
+  let last = null, lastErr = null;
+  for (const path of paths) {
+    const url = camhiUrl(path, method === 'GET' ? data : '');
+    if (args.debug) console.error(`[CAMHI ${activeIp}] ${method} ${url}${method === 'POST' ? `\nPAYLOAD: ${data}` : ''}`);
+    try {
+      const res = method === 'GET' ? await httpGetBasic(url) : await httpPostForm(url, data);
+      if (args.debug) console.error(`[CAMHI ${activeIp}] -> HTTP ${res.statusCode}: ${res.body.trim()}`);
+      if (res.statusCode === 401) throw new Error('HTTP 401 Unauthorized (check --user/--pass)');
+      if (res.statusCode === 200 && !camhiIsNotSupported(res)) {
+        if (args.verbose && path !== paths[0]) console.log(`[CAMHI ${activeIp}] fallback path used: ${path}`);
+        camhiPathCache.set(activeIp, path);
+        return { res, path, ok: true };
+      }
+      last = { res, path, ok: false };
+    } catch (err) {
+      if (/401/.test(err.message)) throw err;
+      lastErr = err;
+    }
+    if (args.verbose && path === paths[0]) console.log(`[CAMHI ${activeIp}] ${path} failed -> trying alternative path`);
+  }
+  if (last) return last;
+  throw lastErr || new Error('CamHi CGI request failed');
+}
+
+// Read one get...attr command; returns { supported, vars, body, path }
+async function camhiGet(cmd) {
+  const r = await camhiRequest('GET', `cmd=${cmd}`);
+  return { supported: r.ok, vars: r.ok ? camhiParseVars(r.res.body) : {}, body: r.res.body, path: r.path };
+}
+
+// Set the value(s) of one virtual preset - fire & forget (with path fallback, no read-back)
+async function camhiSetValue(presetNo) {
+  const def = CAMHI_VIRTUAL_PRESETS[presetNo];
+  const tag = `${activeIp}] Preset${presetNo} ${def.label}`;
+  const values = Object.entries(def.params).map(([k, v]) => `${k}=${v}`).join(', ');
+  try {
+    // one command, only the field(s) of this preset
+    const payload = `cmd=${def.cmd}&` + Object.entries(def.params).map(([k, v]) => `-${k}=${encodeURIComponent(v)}`).join('&');
+    const r = await camhiRequest('POST', payload);
+    const body = r.res.body.trim().replace(/\s+/g, ' ');
+    if (args.verbose) console.log(`[RESPONSE ${activeIp}] ${r.path} HTTP ${r.res.statusCode}: ${body}`);
+    if (!r.ok || /\[Error\]/i.test(body)) {
+      console.error(`[ERROR ${tag}: camera answered "${body}" (HTTP ${r.res.statusCode}, all CGI paths tried)`);
+      return;
+    }
+    console.log(`[SUCCESS ${tag}: sent (${values}) - camera answered "${body}"`);
+  } catch (err) {
+    console.error(`[ERROR ${tag}: ${err.message}`);
+  }
+}
+
+// Map a preset token (901, Preset901, preset0901 ...) to a virtual preset number, or null
+function camhiVirtualPresetNo(token) {
+  const m = /^(?:preset)?0*(\d+)$/i.exec(String(token).trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return CAMHI_VIRTUAL_PRESETS[n] ? n : null;
 }
 
 // === SOAP send wrapper (Promise-wrapped for strict sequential execution) ===
@@ -898,37 +1061,73 @@ const ACTIONS = {
     return true;
   },
 
-// [CamHi Extensions]
-  async set_smart_track() {
-    if (!('smart_track' in args)) errorOut('Missing --smart_track=<1|0|on|off>');
-    
-    // Eingabe parsen: 1, true, 'on' -> 1 | 0, false, 'off' -> 0
-    const rawVal = String(args.smart_track).toLowerCase();
-    const enableVal = (rawVal === '1' || rawVal === 'true' || rawVal === 'on') ? '1' : '0';
+  // ===================== [CamHi / HiSilicon CGI Extension] =====================
+  // Direct access to the camera's proprietary CGI (/…/cgi-bin/hi3510/param.cgi).
+  // Rules (verified live on 2026-09-25, see README "CamHi / HiSilicon CGI"):
+  //  - one value per request; unknown fields are ignored silently
+  //  - one invalid value rejects the WHOLE request ("[Error]Param error.")
+  //  - old firmware: unknown command -> "Error 404 ... invalid request"
+  //  - "[Succeed]" proves nothing -> check with Preset900 / camhi_get if needed
+  //  - set = fire & forget: exactly one command, no read before / after
+//  - every request: /web/cgi-bin/... first, on error/404 the alternative /cgi-bin/...
 
-    const cgiUrl = `http://${activeIp}:${args.port || 80}/web/cgi-bin/hi3510/param.cgi`;
-    
-    // Exakte Payload aus dem Wireshark-PCAP Trace
-    const payload = `cmd=setmotorattr&cururl=http%3A%2F%2F${activeIp}%2Fweb%2Fterminal.html&-tiltscan=1&-tiltspeed=1&-panscan=1&-panspeed=1&-movehome=off&-ptzalarmmask=on&cmd=setsmartrackattr&-smartrack_enable=${enableVal}&cmd=setlightattr&-light_enable=on`;
-
-    if (args.verbose || args.debug) {
-      console.error(`\n[CAMHI CGI ${activeIp}] Setting Smart Track -> ${enableVal}`);
-      console.error(`POST URL: ${cgiUrl}`);
-      console.error(`PAYLOAD: ${payload}\n`);
+  // Read all CamHi values and print them in raw format (virtual preset 900)
+  async camhi_get() {
+    try {
+      const lines = [];
+      let usedPath = null;
+      for (const cmd of CAMHI_GET_CMDS) {
+        const r = await camhiGet(cmd);
+        if (!r.supported) {
+          lines.push(`# ${cmd}: not supported by this firmware (HTTP 404 / invalid request on all CGI paths)`);
+          continue;
+        }
+        usedPath = usedPath || r.path;
+        lines.push(r.body.trim() || `# ${cmd}: empty response`);
+      }
+      if (!usedPath) {
+        console.error(`[ERROR ${activeIp}] CamHi CGI not reachable (${CAMHI_CGI_PATHS.join(', ')})`);
+        return;
+      }
+      console.log(`===== ${activeIp} (CamHi CGI ${usedPath}) =====`);
+      console.log(lines.join('\n'));
+    } catch (err) {
+      console.error(`[ERROR ${activeIp}] CamHi read failed: ${err.message}`);
     }
+  },
+
+  // Send a raw CGI set payload, e.g. --raw="cmd=setlightattr&-light_enable=off"
+  async camhi_set_raw() {
+    if (!args.raw) errorOut('Missing --raw="cmd=set...&-field=value"');
+    const payload = String(args.raw).replace(/^\?/, '').trim();
+    if (!/(^|&)cmd=set\w+/i.test(payload)) errorOut('--raw must contain at least one cmd=set... command');
 
     try {
-      const res = await httpPostForm(cgiUrl, payload);
-      if (args.verbose) console.log(`[RESPONSE ${activeIp}] HTTP ${res.statusCode}`);
-      console.log(`[SUCCESS ${activeIp}] Smart Track set to ${enableVal}`);
+      const r = await camhiRequest('POST', payload);
+      const body = r.res.body.trim().replace(/\s+/g, ' ');
+      const tag = !r.ok ? 'ERROR' : /\[Error\]/i.test(body) ? 'ERROR' : 'RESPONSE';
+      console.log(`[${tag} ${activeIp}] ${r.path} HTTP ${r.res.statusCode}: ${body}`);
+      if (!r.ok && (payload.match(/(^|&)cmd=/g) || []).length > 1)
+        console.log(`[HINT ${activeIp}] old firmware stops at the first unknown command - commands BEFORE it may already be stored; verify with --action=camhi_get`);
     } catch (err) {
-      console.error(`[ERROR ${activeIp}] Failed to set Smart Track: ${err.message}`);
+      console.error(`[ERROR ${activeIp}] CamHi raw set failed: ${err.message}`);
     }
+  },
+
+  // Smart-Tracking on/off (kept for backward compatibility; now sets ONLY smartrack_enable)
+  async set_smart_track() {
+    if (!('smart_track' in args)) errorOut('Missing --smart_track=<1|0|on|off>');
+    const rawVal = String(args.smart_track).toLowerCase();
+    const on = (rawVal === '1' || rawVal === 'true' || rawVal === 'on');
+    return camhiSetValue(on ? 901 : 902);
   },
 
   // Aliases
   smarttrack() {
     return this.set_smart_track();
+  },
+  camhi_raw_get() {
+    return this.camhi_get();
   },
 
   // -------------------- Original feature set (v1.1.8) --------------------
@@ -975,26 +1174,22 @@ const ACTIONS = {
   },
 
   goto() {
-    // 1. Error Handling: Prüfen, ob das Argument --preset überhaupt übergeben wurde
+    // Error handling: --preset is mandatory
     if (!args.preset) errorOut('--preset is required for goto');
     
     const presetToken = String(args.preset).trim();
 
     // =========================================================================
-    // Virtual Preset Handler for CamHi / HiSilicon Smart-Tracking
-    // Preset 901 -> Smart Track ON
-    // Preset 902 -> Smart Track OFF
+    // Virtual Preset Handler for CamHi / HiSilicon CGI (Preset900 - Preset911)
+    // Accepts "901", "Preset901", "preset0901" ... (see CAMHI_VIRTUAL_PRESETS)
+    //   900      -> read all CamHi values (raw output)
+    //   901-911  -> set exactly ONE value (fire & forget)
     // =========================================================================
-    if (presetToken === '901') {
-      if (args.verbose) console.log(`[VIRTUAL PRESET ${activeIp}] Preset 901 detected -> Enabling Smart Track`);
-      args.smart_track = '1';
-      return this.set_smart_track();
-    }
-
-    if (presetToken === '902') {
-      if (args.verbose) console.log(`[VIRTUAL PRESET ${activeIp}] Preset 902 detected -> Disabling Smart Track`);
-      args.smart_track = '0';
-      return this.set_smart_track();
+    const vpNo = camhiVirtualPresetNo(presetToken);
+    if (vpNo !== null) {
+      if (args.verbose) console.log(`[VIRTUAL PRESET ${activeIp}] Preset${vpNo} -> ${CAMHI_VIRTUAL_PRESETS[vpNo].label}`);
+      if (CAMHI_VIRTUAL_PRESETS[vpNo].read) return this.camhi_get();
+      return camhiSetValue(vpNo);
     }
 
     // Standard ONVIF GotoPreset behavior for all other presets (z.B. Preset 1, 2, 3...)
