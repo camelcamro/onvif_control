@@ -1,8 +1,7 @@
-
 # ONVIF Control Script
 
-**Version:** 1.2.0
-**Build Date:** 2026-09-24
+**Version:** 1.2.1
+**Build Date:** 2026-09-25
 **Author:** camel (camelcamro)
 
 ---
@@ -24,7 +23,9 @@ So, i created this project.
 - Dry run & verbose/debug modes for development
 - Standalone – does **not** require `onvif-cli` or any ONVIF SDK
 - Multi-IP & Range support (--ip=172.20.1.171-198 or --ip=172.20.1.171,172.20.1.172)
-- Virtual Preset Handler for CamHi / HiSilicon Smart-Tracking (Preset901/Preset902)
+- CamHi / HiSilicon CGI extension (see section *CamHi / HiSilicon CGI extension*):
+  virtual presets **Preset900–Preset911** (read all values raw / set exactly one value),
+  raw read/set actions, automatic CGI path fallback
 ---
 
 ## 📁 Installation Guide
@@ -146,6 +147,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | Option                            | Description                                           |
 |-----------------------------------|-------------------------------------------------------|
 | `--bitrate`                       | Bitrate in kbps (set_video_encoder_configuration)     |
+| `--cgi_port`                      | CamHi CGI web port (default `80`, not the ONVIF port) |
 | `--codec`                         | Codec (e.g. H264)                                     |
 | `--datetime`                      | Manual UTC datetime (setdatetime override)            |
 | `--del_username`                  | Username to delete (delete_user)                      |
@@ -167,6 +169,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--pan, -p`                       | Pan value                                             |
 | `--preset=<NAME>, -e`             | Preset name (setpreset) or for legacy alias           |
 | `--presetname=<NAME>, -n`         | Preset name (setpreset)                               |
+| `--raw`                           | Raw CamHi set payload (`camhi_set_raw`)               |
 | `--resolution`                    | WidthxHeight (set_video_encoder_configuration)        |
 | `--tilt, -y`                      | Tilt value                                            |
 | `--username`                      | Target username (reset_password)                      |
@@ -198,8 +201,8 @@ node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --a
 - `get_configurations` — List PTZ configurations
 - `get_nodes` — List PTZ nodes
 - `get_presets` — List PTZ presets (tokens & names)
-- `goto` — Go to preset by **PresetToken**
-             * custom special token: Preset901=SmartTrackOn / Preset902=SmartTrackOff)
+- `goto` — Go to preset by **PresetToken** ( see table below in README for "VIRTUAL Presets"
+             * Preset900–Preset911 are CamHi virtual presets (see section *CamHi / HiSilicon CGI extension*)
 - `gotohomeposition` — Go to home position ( -> check via get_nodes - if supported) 
 - `home` — Go to home position (same as gotohomeposition -> check via get_nodes - if supported) 
 - `move` — Continuous pan/tilt for `--time` seconds
@@ -739,6 +742,174 @@ presets → get_presets
 get_static_ip → get_network_interfaceshome
 home → gotohomeposition
 
+---
+
+## 📷 CamHi / HiSilicon CGI extension
+
+Many cheap PTZ cameras sold with the **CamHi / CamHiPro** app (HiSilicon / "Hipcam" web server, `IP CAMERA` web UI)
+have settings that are **not reachable via ONVIF** (Smart-Tracking, status LED, alarm mask during PTZ movement, …).
+They are stored through the camera's proprietary CGI:
+
+```
+http://<IP>[:<cgi_port>]/web/cgi-bin/hi3510/param.cgi     (tried first)
+http://<IP>[:<cgi_port>]/cgi-bin/hi3510/param.cgi         (alternative)
+```
+
+**Every** CGI request (read and set) is sent to `/web/cgi-bin/…` first. On a network error, an HTTP error or
+`Error 404 … invalid request` the same request is repeated on the alternative path `/cgi-bin/…`.
+The path that worked is tried first for the next request to the same camera (within one run).
+
+The CGI runs on the camera's **web port (default 80)** – *not* on the ONVIF port given with `--port`.
+Use `--cgi_port` if your camera's web UI runs on another port. Authentication: HTTP Basic (`--user` / `--pass`).
+
+### Virtual presets (for Home Assistant / scripts)
+
+Use them like normal presets: `--action=goto --preset=Preset9xx` (also accepted: `9xx`, `preset9xx`, `Preset09xx`).
+**Every preset changes exactly ONE setting** – fire & forget: one request, no read before or after.
+Use `Preset900` to check the current values.
+
+| Preset | Function | CGI command | Field(s) |
+|---|---|---|---|
+| `Preset900` | Read **all** CamHi values, raw output | `getmotorattr`, `getsmartrackattr`, `getlightattr` | – |
+| `Preset901` | Smart-Tracking **ON** | `setsmartrackattr` | `smartrack_enable=1` |
+| `Preset902` | Smart-Tracking **OFF** | `setsmartrackattr` | `smartrack_enable=0` |
+| `Preset903` | Status LED **ON** | `setlightattr` | `light_enable=on` |
+| `Preset904` | Status LED **OFF** | `setlightattr` | `light_enable=off` |
+| `Preset905` | No motion alarm while PTZ is moving **ON** | `setmotorattr` | `ptzalarmmask=on` |
+| `Preset906` | No motion alarm while PTZ is moving **OFF** | `setmotorattr` | `ptzalarmmask=off` |
+| `Preset907` | Center after self check (reboot) **ON** | `setmotorattr` | `movehome=on` |
+| `Preset908` | Center after self check (reboot) **OFF** | `setmotorattr` | `movehome=off` |
+| `Preset909` | PTZ speed **FAST** | `setmotorattr` | `panspeed` + `tiltspeed` = `0` |
+| `Preset910` | PTZ speed **MEDIUM** | `setmotorattr` | `panspeed` + `tiltspeed` = `1` |
+| `Preset911` | PTZ speed **SLOW** | `setmotorattr` | `panspeed` + `tiltspeed` = `2` |
+
+PTZ speed values (verified in the web UI): `0` = Fast, `1` = Medium, `2` = Slow – `3` is rejected with `[Error]Param error.`
+They are defined in `CAMHI_SPEED` in the script.
+
+Numeric settings (cruise laps, timeouts, preset numbers, scan limits, …) are intentionally **not** supported as
+virtual presets. Use `camhi_set_raw` for them.
+
+### Actions
+
+| Action | Description |
+|---|---|
+| `camhi_get` (alias `camhi_raw_get`) | Read all values, raw `var name="value";` output (same as `Preset900`) |
+| `camhi_set_raw` | Send a raw set payload given with `--raw="cmd=set...&-field=value"` |
+| `set_smart_track` (alias `smarttrack`) | `--smart_track=<1\|0\|on\|off>` (same as `Preset901` / `Preset902`) |
+
+```bash
+# Read all values (raw)
+node onvif_control.js --ip=172.20.1.183 --port=8080 --user=admin --pass=**** --action=goto --preset=Preset900
+node onvif_control.js --ip=172.20.1.171-198 --port=8080 --user=admin --pass=**** --action=camhi_get
+
+# Set one value (status LED off) on all cameras
+node onvif_control.js --ip=172.20.1.171-198 --port=8080 --user=admin --pass=**** --action=goto --preset=Preset904
+
+# Raw set (one command per call recommended)
+node onvif_control.js --ip=172.20.1.183 --port=8080 --user=admin --pass=**** --action=camhi_set_raw --raw="cmd=setmotorattr&-panscan=1&-tiltscan=1"
+```
+
+### Output
+
+```
+===== 172.20.1.186 (CamHi CGI /web/cgi-bin/hi3510/param.cgi) =====      <- camhi_get / Preset900
+var panspeed="0";
+...
+# getsmartrackattr: not supported by this firmware (HTTP 404 / invalid request)
+var light_enable="off";
+
+[SUCCESS 172.20.1.182] Preset904 Status LED OFF: sent (light_enable=off) - camera answered "[Succeed]light ctrl(off) succeed."
+[SUCCESS 172.20.1.182] Preset901 Smart-Tracking ON: sent (smartrack_enable=1) - camera answered "[Succeed]set ok."
+[ERROR 172.20.1.186] Preset901 Smart-Tracking ON: camera answered "Error 404: Not Found invalid request" (HTTP 404, all CGI paths tried)
+[ERROR 172.20.1.x] ...: camera answered "[Error]Param error."
+```
+
+`SUCCESS` means the camera answered `[Succeed]…` – see rule 6: this is not a guarantee that the value is stored.
+On cameras with `smartrack_flag=0` Smart-Tracking is accepted but has no effect.
+
+An `ERROR` for Smart-Tracking on old firmware (no Smart-Tracking command) is expected and harmless – nothing is changed.
+
+In Home Assistant the raw output of `Preset900` is only visible when the `shell_command` is called with a
+`response_variable` (the output is returned in `stdout`).
+
+### How a virtual preset is executed
+
+1. **Set** – one command, only the field(s) of this preset (HTTP POST, `application/x-www-form-urlencoded`),
+   fire & forget (no read before or after). `/web/cgi-bin/…` first, on error / 404 the alternative `/cgi-bin/…`.
+2. Camera answers `[Succeed]…` → `SUCCESS`.
+3. `[Error]…` or 404 on both paths → `ERROR` (nothing was changed).
+
+### CGI rules & findings (tested live on 2026-09-25)
+
+| # | Finding | Consequence |
+|---|---|---|
+| 1 | Setting **single fields** works; fields not sent stay unchanged | send only what should change |
+| 2 | **Unknown fields** are ignored silently (new and old firmware) | one payload may be sent to all cameras |
+| 3 | **One invalid value rejects the whole request** → `[Error]Param error.` (all `cmd=` blocks of that call) | one command per request |
+| 4 | Old firmware: **unknown command** (`setsmartrackattr` / `getsmartrackattr`) → `Error 404: Not Found / invalid request`. Commands are processed in order – blocks **before** it are stored, blocks **after** it are not | never send smart-track commands to old firmware |
+| 5 | HTTP 404 on old firmware can mean *unknown command*, not only *wrong path* | on 404 the alternative path is tried; 404 on both paths = `ERROR` |
+| 6 | `[Succeed]…` is **not** a proof (`poweronscanenable=1` answers `[Succeed]set ok.` but is not stored) | check with `Preset900` when in doubt |
+| 7 | `smartrack_enable` is stored even when `smartrack_flag=0` (no effect) | harmless |
+| 8 | Responses (without `cururl`) are plain text without newline: `[Succeed]set ok.`, `[Succeed]light ctrl(on) succeed.`, `[Error]Param error.` | parse the text, not the HTTP status |
+| 9 | The browser also sends `cururl=http%3A%2F%2F<ip>%2Fweb%2Fterminal.html` – only the redirect target of the web UI | not needed |
+
+### ⛔ Blocked fields – never set
+
+| Field | Why |
+|---|---|
+| `poweronpresetindex` | Reads `0` (= no power-on preset), but `0` and `-1` are rejected with `[Error]Param error.` – and because of rule 3 **all other values of the same request are dropped**. Once set to ≥ 1 it can **not** be reset to `0` via CGI (factory reset only). |
+| `poweronscanenable` | Answers `[Succeed]` but the value is not stored. |
+
+No virtual preset uses these fields. Do not use them with `camhi_set_raw` either.
+
+### Firmware variants
+
+| Variant | CGI path | Commands | Notes |
+|---|---|---|---|
+| Current firmware | `/web/cgi-bin/…` and `/cgi-bin/…` | `get/setmotorattr`, `get/setsmartrackattr`, `get/setlightattr` | 19–25 fields; Smart-Tracking only if `smartrack_flag=1` |
+| Old "Hipcam" firmware | `/web/cgi-bin/…` only | `get/setmotorattr`, `get/setlightattr` | 8 fields: `panspeed`, `tiltspeed`, `panscan`, `tiltscan`, `movehome`, `ptzalarmmask`, `alarmpresetindex`, `light_enable` |
+
+### Field reference (`get…attr` output)
+
+| Field | Command | Web UI (Settings → Advanced → Terminal) | Meaning | Values |
+|---|---|---|---|---|
+| `panspeed`, `tiltspeed` | motor | PTZ speed | pan / tilt speed | `0` Fast, `1` Medium, `2` Slow |
+| `panscan`, `tiltscan` | motor | Cruise laps (1–50) | number of internal cruise laps | number |
+| `movehome` | motor | Centered While Self Check | move to center after self check (reboot) | `on` / `off` |
+| `ptzalarmmask` | motor | Close the alarm PTZ movement | no motion alarms while the camera moves | `on` / `off` |
+| `alarmpresetindex` | motor | – | preset used by alarm linkage "go to preset" | number |
+| `poweronpresetindex` | motor | – | preset after power-on – ⛔ **blocked** | – |
+| `watchpresetindex` | motor | – | watch/guard preset after idle (`0` = off) | number |
+| `poweronscanenable` | motor | – | cruise/scan after power-on – ⛔ **blocked** | – |
+| `movesteptimeout` | motor | – | duration of one manual step (ms) | number |
+| `presettimeout` | motor | – | preset related timeout (s) | number |
+| `limitleft`, `limitright` | motor | – | scan limits (`-1` = not set) | number |
+| `tourinterval` | motor | – | list of selectable cruise dwell times (not a setting) | `5;10;…;120` |
+| `pandir`, `tiltdir` | motor | – | direction inversion (some firmware only) | `0` / `1` |
+| `smartrack_flag` | smartrack | – | capability: camera supports Smart-Tracking | `0` / `1` (read only) |
+| `smartrack_enable` | smartrack | SmartTrack | Smart-Tracking on/off | `1` / `0` |
+| `smartrack_timeout` | smartrack | – | seconds until return after tracking | number |
+| `smartrack_mode`, `smartrack_f2n`, `smartrack_n2f`, `smartrack_n2ftimeout` | smartrack | – | tracking mode / auto-zoom thresholds (zoom models only) | number |
+| `light_enable` | light | Indicator Display Mode | status LED (`Been lighted` / `Been extinguished`) | `on` / `off` |
+
+Meanings without a web UI field are derived from names and values – they are not officially documented.
+
+### Plain curl equivalents
+
+```bash
+# read (old firmware: without cmd=getsmartrackattr)
+curl -s -u admin:**** "http://172.20.1.183/web/cgi-bin/hi3510/param.cgi?cmd=getmotorattr&cmd=getsmartrackattr&cmd=getlightattr"
+# set one value
+curl -s -u admin:**** -d "cmd=setlightattr&-light_enable=off" "http://172.20.1.183/web/cgi-bin/hi3510/param.cgi"; echo
+```
+
+### Security note (CamHi CGI)
+
+The CGI uses plain HTTP with Basic authentication (Base64, not encrypted). The web UI also returns all
+user passwords in clear text (`cmd=getuserattr`). Keep these cameras in an isolated network / VLAN.
+
+---
+
 ## 🧠 Expert & Troubleshooting
 
 ### Discovering Tokens and Presets
@@ -762,7 +933,8 @@ Links:
 ---
 
 ## 🛡️ Security Note
-This tool uses ONVIF-compliant digest authentication with WS-Security headers (password hashed via SHA1 with nonce and timestamp). No plain password is transmitted.
+This tool uses ONVIF-compliant digest authentication with WS-Security headers (password hashed via SHA1 with nonce and timestamp). No plain password is transmitted for ONVIF calls.
+Exception: the CamHi CGI extension (Preset900–Preset911, `camhi_*`) uses HTTP Basic authentication (not encrypted).
 
 ---
 
@@ -790,6 +962,29 @@ This tool uses ONVIF-compliant digest authentication with WS-Security headers (p
   (eg: "tracking stop", "tracking start", "cruise mode", reset all "Presets to default"). This can't be used for *setpreset* or *removepreset" 
 - If nothing moves, check credentials, token, and presets
 - Ensure your camera supports PTZ and ONVIF over HTTP
+
+---
+
+## 📝 Changelog
+
+### 1.2.1 (2026-09-25)
+- CamHi / HiSilicon CGI extension rewritten:
+  - Virtual presets **Preset900** (read all values raw) and **Preset901–Preset911** (set exactly one value, fire & forget)
+  - New actions `camhi_get` (alias `camhi_raw_get`) and `camhi_set_raw` (`--raw`)
+  - CGI path fallback for every request (read and set): `/web/cgi-bin/…` first, on error / 404 `/cgi-bin/…`
+  - New option `--cgi_port` (default 80). The CGI no longer uses the ONVIF `--port`.
+  - Documented fields that must never be set: `poweronpresetindex`, `poweronscanenable`
+  - Result per camera: `SUCCESS` (camera answered `[Succeed]`) / `ERROR`
+- **Fix:** Smart-Tracking (`Preset901`/`Preset902`, `set_smart_track`) now sets **only** `smartrack_enable`.
+  v1.2.0 sent the complete web UI payload and overwrote status LED (`on`), alarm mask (`on`),
+  PTZ speed (`1`), cruise laps (`1`) and `movehome` (`off`) on every call.
+- **Fix:** virtual presets are recognised as `901` **and** `Preset901` (v1.2.0 only matched `901`,
+  `Preset901` was sent as a normal ONVIF GotoPreset).
+- Old firmware (no Smart-Tracking command) is now reachable for all other values via the path fallback.
+
+### 1.2.0 (2026-09-24)
+- Multi-IP & range support
+- Virtual presets Preset901/Preset902 (Smart-Tracking)
 
 ---
 
