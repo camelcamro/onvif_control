@@ -97,8 +97,7 @@ function showHelp() {
     get_configurations           List PTZ configurations
     get_nodes                    List PTZ nodes
     get_presets                  List PTZ presets (tokens & names)
-    goto                         Go to preset by token (special token: Preset 901=SmartTrack On)
-                                   * custom special token: Preset901=SmartTrackOn / Preset902=SmartTrackOff)
+    goto                         Go to preset by token *custom special token: Preset901=SmartTrackOn / Preset902=SmartTrackOff)
     gotohomeposition             Go to PTZ Home position
     move                         Continuous pan/tilt for --time seconds
     relativemove                 Relative PT step
