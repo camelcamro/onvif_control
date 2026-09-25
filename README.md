@@ -199,8 +199,7 @@ node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --a
 - `get_nodes` — List PTZ nodes
 - `get_presets` — List PTZ presets (tokens & names)
 - `goto` — Go to preset by **PresetToken**
--          * custom special token: Preset901=SmartTrackOn / Preset902=SmartTrackOff)
-
+             * custom special token: Preset901=SmartTrackOn / Preset902=SmartTrackOff)
 - `gotohomeposition` — Go to home position ( -> check via get_nodes - if supported) 
 - `home` — Go to home position (same as gotohomeposition -> check via get_nodes - if supported) 
 - `move` — Continuous pan/tilt for `--time` seconds
