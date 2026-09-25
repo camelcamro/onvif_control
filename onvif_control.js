@@ -97,7 +97,8 @@ function showHelp() {
     get_configurations           List PTZ configurations
     get_nodes                    List PTZ nodes
     get_presets                  List PTZ presets (tokens & names)
-    goto                         Go to preset by token
+    goto                         Go to preset by token (special token: Preset 901=SmartTrack On)
+                                   * custom special token: Preset901=SmartTrackOn / Preset902=SmartTrackOff)
     gotohomeposition             Go to PTZ Home position
     move                         Continuous pan/tilt for --time seconds
     relativemove                 Relative PT step
@@ -503,6 +504,44 @@ function httpPostXml(targetUrl, xml, opts = {}) {
   });
 }
 
+// Helper for HiSilicon/CamHi CGI HTTP-POST requests (application/x-www-form-urlencoded)
+function httpPostForm(targetUrl, postData) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(targetUrl);
+    const isHttps = u.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    
+    // Basic Auth Header aufbauen
+    const authHeader = 'Basic ' + Buffer.from(`${args.user || 'admin'}:${args.pass || ''}`).toString('base64');
+
+    const req = lib.request({
+      hostname: u.hostname,
+      port: u.port || (isHttps ? 443 : 80),
+      path: u.pathname + (u.search || ''),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData, 'utf8'),
+        'Authorization': authHeader
+      },
+      timeout: SOCKET_TIMEOUT_MS,
+      rejectUnauthorized: false
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve({ statusCode: res.statusCode, body });
+      });
+    });
+
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout (${SOCKET_TIMEOUT_MS}ms) calling ${u.href}`)); });
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
 // === SOAP send wrapper (Promise-wrapped for strict sequential execution) ===
 // svc: 'PTZ' (default) | 'DEVICE' | 'MEDIA' | 'MEDIA1' | 'MEDIA2' | 'EVENTS'
 function sendSoap(action, body, cb, svc = 'PTZ') {
@@ -828,6 +867,7 @@ const ACTIONS = {
     }
   },
 
+
   // Internal helpers for renew/unsubscribe using minimal headers (no action attr)
   async _renew_internal(subscriptionUrl) {
     const env = `<?xml version="1.0" encoding="UTF-8"?>
@@ -857,6 +897,39 @@ const ACTIONS = {
     const resp = await httpPostXml(subscriptionUrl, env);
     if (args.debug) console.error('RESPONSE Unsubscribe:\n', resp.body);
     return true;
+  },
+
+// [CamHi Extensions]
+  async set_smart_track() {
+    if (!('smart_track' in args)) errorOut('Missing --smart_track=<1|0|on|off>');
+    
+    // Eingabe parsen: 1, true, 'on' -> 1 | 0, false, 'off' -> 0
+    const rawVal = String(args.smart_track).toLowerCase();
+    const enableVal = (rawVal === '1' || rawVal === 'true' || rawVal === 'on') ? '1' : '0';
+
+    const cgiUrl = `http://${activeIp}:${args.port || 80}/web/cgi-bin/hi3510/param.cgi`;
+    
+    // Exakte Payload aus dem Wireshark-PCAP Trace
+    const payload = `cmd=setmotorattr&cururl=http%3A%2F%2F${activeIp}%2Fweb%2Fterminal.html&-tiltscan=1&-tiltspeed=1&-panscan=1&-panspeed=1&-movehome=off&-ptzalarmmask=on&cmd=setsmartrackattr&-smartrack_enable=${enableVal}&cmd=setlightattr&-light_enable=on`;
+
+    if (args.verbose || args.debug) {
+      console.error(`\n[CAMHI CGI ${activeIp}] Setting Smart Track -> ${enableVal}`);
+      console.error(`POST URL: ${cgiUrl}`);
+      console.error(`PAYLOAD: ${payload}\n`);
+    }
+
+    try {
+      const res = await httpPostForm(cgiUrl, payload);
+      if (args.verbose) console.log(`[RESPONSE ${activeIp}] HTTP ${res.statusCode}`);
+      console.log(`[SUCCESS ${activeIp}] Smart Track set to ${enableVal}`);
+    } catch (err) {
+      console.error(`[ERROR ${activeIp}] Failed to set Smart Track: ${err.message}`);
+    }
+  },
+
+  // Aliases
+  smarttrack() {
+    return this.set_smart_track();
   },
 
   // -------------------- Original feature set (v1.1.8) --------------------
@@ -903,10 +976,32 @@ const ACTIONS = {
   },
 
   goto() {
+    // 1. Error Handling: Prüfen, ob das Argument --preset überhaupt übergeben wurde
     if (!args.preset) errorOut('--preset is required for goto');
+    
+    const presetToken = String(args.preset).trim();
+
+    // =========================================================================
+    // Virtual Preset Handler for CamHi / HiSilicon Smart-Tracking
+    // Preset 901 -> Smart Track ON
+    // Preset 902 -> Smart Track OFF
+    // =========================================================================
+    if (presetToken === '901') {
+      if (args.verbose) console.log(`[VIRTUAL PRESET ${activeIp}] Preset 901 detected -> Enabling Smart Track`);
+      args.smart_track = '1';
+      return this.set_smart_track();
+    }
+
+    if (presetToken === '902') {
+      if (args.verbose) console.log(`[VIRTUAL PRESET ${activeIp}] Preset 902 detected -> Disabling Smart Track`);
+      args.smart_track = '0';
+      return this.set_smart_track();
+    }
+
+    // Standard ONVIF GotoPreset behavior for all other presets (z.B. Preset 1, 2, 3...)
     const body = `<tptz:GotoPreset xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
       <ProfileToken>${PROFILE_TOKEN}</ProfileToken>
-      <PresetToken>${args.preset}</PresetToken>
+      <PresetToken>${presetToken}</PresetToken>
     </tptz:GotoPreset>`;
     return sendSoap('GotoPreset', body, null, 'PTZ');
   },
