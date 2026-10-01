@@ -1,7 +1,7 @@
 # ONVIF Control Script
 
-**Version:** 1.2.1
-**Build Date:** 2026-09-25
+**Version:** 1.2.2
+**Build Date:** 2026-09-30
 **Author:** camel (camelcamro)
 
 ---
@@ -144,38 +144,39 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 
 ### Other optional options
 
-| Option                            | Description                                           |
-|-----------------------------------|-------------------------------------------------------|
-| `--bitrate`                       | Bitrate in kbps (set_video_encoder_configuration)     |
-| `--cgi_port`                      | CamHi CGI web port (default `80`, not the ONVIF port) |
-| `--codec`                         | Codec (e.g. H264)                                     |
-| `--datetime`                      | Manual UTC datetime (setdatetime override)            |
-| `--del_username`                  | Username to delete (delete_user)                      |
-| `--dhcp`                          | DHCP enable flag (set_network_interfaces)             |
-| `--dns1, --dns2`                  | DNS servers (set_dns)                                 |
-| `--dry-run`, `-r`                 | Do not send SOAP; validate & show intended action     |
-| `--enable <true\\|false\\|1\\|0>` | Enable/disable (set_motion_detection)                 |
-| `--eventtype`                     | Event filter hint (not all cameras use it)            |
-| `--gateway`                       | Gateway IP (set_network_interfaces)                   |
-| `--hostname`                      | New hostname (sethostname)                            |
-| `--log, -l`                       | Send log lines to system logger                       |
-| `--logtype`                       | Log type for `get_system_logs` (`System`\|`Access`)   |
-| `--mute`, `-m`                    | Suppress error prints (mute console errors)           |
-| `--netmask`                       | Netmask (set_network_interfaces)                      |
-| `--new_password`                  | Password for new user (add_user)                      |
-| `--new_userlevel`                 | Access level (Administrator, User, Operator)          |
-| `--new_username`                  | Username to create (add_user)                         |
-| `--ntp_server`                    | NTP server IP/host (set_ntp)                          |
-| `--pan, -p`                       | Pan value                                             |
-| `--preset=<NAME>, -e`             | Preset name (setpreset) or for legacy alias           |
-| `--presetname=<NAME>, -n`         | Preset name (setpreset)                               |
-| `--raw`                           | Raw CamHi set payload (`camhi_set_raw`)               |
-| `--resolution`                    | WidthxHeight (set_video_encoder_configuration)        |
-| `--tilt, -y`                      | Tilt value                                            |
-| `--username`                      | Target username (reset_password)                      |
-| `--wakeup_simple`                 | Send GetPresets before PTZ                            |
-| `--wakeup`                        | Send GetNodes→GetConfigurations→GetPresets before PTZ |
-| `--zoom, -z`                      | Zoom value                                            |
+| Option                            | Description                                               |
+|-----------------------------------|-----------------------------------------------------------|
+| `--bitrate`                       | Bitrate in kbps (set_video_encoder_configuration)         |
+| `--cgi_port`                      | CamHi CGI web port (default `80`, not the ONVIF port)     |
+| `--codec`                         | Codec (e.g. H264)                                         |
+| `--datetime`                      | Manual UTC datetime (setdatetime override)                |
+| `--del_username`                  | Username to delete (delete_user)                          |
+| `--dhcp`                          | DHCP enable flag (set_network_interfaces)                 |
+| `--dns1, --dns2`                  | DNS servers (set_dns)                                     |
+| `--dry-run`, `-r`                 | Do not send SOAP; validate & show intended action         |
+| `--enable <true\\|false\\|1\\|0>` | Enable/disable (set_motion_detection)                     |
+| `--eventtype`                     | Event filter hint (not all cameras use it)                |
+| `--gateway`                       | Gateway IP (set_network_interfaces)                       |
+| `--hostname`                      | New hostname (sethostname)                                |
+| `--log, -l`                       | Send log lines to system logger                           |
+| `--logtype`                       | Log type for `get_system_logs` (`System`\|`Access`)       |
+| `--mute`, `-m`                    | Suppress error prints (mute console errors)               |
+| `--netmask`                       | Netmask (set_network_interfaces)                          |
+| `--new_password`                  | Password for new user (add_user)                          |
+| `--new_userlevel`                 | Access level: Administrator | Operator | User | Anonymous |
+| ``                                  (used with add_user, reset_password)                      |
+| `--new_username`                  | Username to create (add_user)                             |
+| `--ntp_server`                    | NTP server IP/host (set_ntp)                              |
+| `--pan, -p`                       | Pan value                                                 |
+| `--preset=<NAME>, -e`             | Preset name (setpreset) or for legacy alias               |
+| `--presetname=<NAME>, -n`         | Preset name (setpreset)                                   |
+| `--raw`                           | Raw CamHi set payload (`camhi_set_raw`)                   |
+| `--resolution`                    | WidthxHeight (set_video_encoder_configuration)            |
+| `--tilt, -y`                      | Tilt value                                                |
+| `--username`                      | Target username (reset_password)                          |
+| `--wakeup_simple`                 | Send GetPresets before PTZ                                |
+| `--wakeup`                        | Send GetNodes→GetConfigurations→GetPresets before PTZ     |
+| `--zoom, -z`                      | Zoom value                                                |
 
 ### Action based call
 | Option      | Description                                      |
@@ -346,7 +347,7 @@ node onvif_control.js --ip=172.20.1.191 --port=8080 --user=admin --pass=**** --a
 - `get_users` — List ONVIF users
 - `gethostname` — Get device hostname
 - `reboot` — Reboot the camera
-- `reset_password` — Reset ONVIF password
+- `reset_password` — Change password of --username (--new_password, optional --new_userlevel; default: keep current level)
 - `set_dns` — Set DNS configuration
 - `set_network_interfaces` — Configure detailed network interface parameters
 - `set_ntp` — Set NTP server
