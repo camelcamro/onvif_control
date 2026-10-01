@@ -154,7 +154,7 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--dhcp`                          | DHCP enable flag (set_network_interfaces)                 |
 | `--dns1, --dns2`                  | DNS servers (set_dns)                                     |
 | `--dry-run`, `-r`                 | Do not send SOAP; validate & show intended action         |
-| `--enable <true\\|false\\|1\\|0>` | Enable/disable (set_motion_detection)                     |
+| `--enable <true\|false\|1\|0>`    | Enable/disable (set_motion_detection)                     |
 | `--eventtype`                     | Event filter hint (not all cameras use it)                |
 | `--gateway`                       | Gateway IP (set_network_interfaces)                       |
 | `--hostname`                      | New hostname (sethostname)                                |
@@ -162,9 +162,8 @@ node /home/onvif/onvif_control.js --ip=172.20.1.194 --port=8080 ...
 | `--logtype`                       | Log type for `get_system_logs` (`System`\|`Access`)       |
 | `--mute`, `-m`                    | Suppress error prints (mute console errors)               |
 | `--netmask`                       | Netmask (set_network_interfaces)                          |
-| `--new_password`                  | Password for new user (add_user)                          |
-| `--new_userlevel`                 | Access level: Administrator | Operator | User | Anonymous |
-| ``                                  (used with add_user, reset_password)                      |
+| `--new_password`                  | New password (add_user, reset_password)                   |
+| `--new_userlevel`                 | Access level: `Administrator` \| `Operator` \| `User` \| `Anonymous` (add_user, reset_password; reset_password default: keep current level) |
 | `--new_username`                  | Username to create (add_user)                             |
 | `--ntp_server`                    | NTP server IP/host (set_ntp)                              |
 | `--pan, -p`                       | Pan value                                                 |
