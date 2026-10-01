@@ -2,8 +2,8 @@
 // onvif_control.js
 // ONVIF Control Script - Full SOAP Implementation + Events (subscribe/renew/unsubscribe)
 //
-// Version: 1.2.1
-// Build Date: 2026-09-25
+// Version: 1.2.2
+// Build Date: 2026-09-30
 //
 // - Multi-IP & Range support (--ip=172.20.1.171-198 or --ip=172.20.1.171,172.20.1.172)
 // - Executes sequentially per IP with strict Promises (awaits response before next IP)
@@ -16,6 +16,9 @@
 //           --cgi_port (default 80).
 //           Smart-Tracking (901/902) now sets ONLY smartrack_enable (v1.2.0 also overwrote
 //           LED, alarm mask, PTZ speed and cruise laps).
+// - v1.2.2: reset_password now sends the mandatory <tt:UserLevel> (SetUser was rejected by CamHi
+//           with "Invalid soap message"); level from --new_userlevel or the current level (GetUsers).
+//           add_user validates --new_userlevel; user names / passwords are XML-escaped.
 //
 // Usage examples (events):
 //   node onvif_control.js --ip=172.20.1.172 --port=8080 --user=admin --pass=*** \
@@ -51,8 +54,8 @@ const args = require('minimist')(process.argv.slice(2), {
   ]
 });
 
-const VERSION = '1.2.1';
-const BUILD_DATE = '2026-09-25';
+const VERSION = '1.2.2';
+const BUILD_DATE = '2026-09-30';
 const PROFILE_TOKEN = args.token || 'MainStreamProfileToken';
 const WAKEUP = 'wakeup' in args;
 const WAKEUP_SIMPLE = 'wakeup_simple' in args;
@@ -134,7 +137,8 @@ function showHelp() {
     get_system_logs              Get system/access logs (--logtype=System|Access)
     gethostname                  Get device hostname
     reboot                       Reboot the device
-    reset_password               Reset ONVIF password for a username
+    reset_password               Change password of --username (--new_password, optional --new_userlevel;
+                                 default: keep current level)
     set_dns                      Set DNS configuration
     set_network_interfaces       Configure network interface (IPv4)
     set_ntp                      Set NTP server
@@ -194,7 +198,7 @@ function showHelp() {
     --log, -l                     Send log lines to system logger
     --netmask                     Netmask (set_network_interfaces)
     --new_password                Password for new user (add_user)
-    --new_userlevel               Access level (Administrator, User, Operator)
+    --new_userlevel               Access level: Administrator | Operator | User | Anonymous (add_user, reset_password)
     --new_username                Username to create (add_user)
     --ntp_server                  NTP server IP/host (set_ntp)
     --pan, -p                     Pan value
@@ -314,6 +318,14 @@ const newUser = args.new_username;
 const newPass = args.new_password;
 const newLevel = args.new_userlevel;
 const delUser = args.del_username;
+
+// ONVIF tt:UserLevel values (case-sensitive)
+const ONVIF_USER_LEVELS = ['Administrator', 'Operator', 'User', 'Anonymous', 'Extended'];
+
+// Escape text for XML element content (user names / passwords)
+function xmlEscape(v) {
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
 
 // === Helper: Build WS-Security Header ===
 function buildWSSecurity(username, password) {
@@ -1422,10 +1434,11 @@ const ACTIONS = {
 
   add_user() {
     if (!newUser || !newPass || !newLevel) errorOut('Missing --new_username, --new_password, or --new_userlevel');
+    if (!ONVIF_USER_LEVELS.includes(String(newLevel))) errorOut(`--new_userlevel must be one of: ${ONVIF_USER_LEVELS.join(', ')}`);
     const body = `<tds:CreateUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
       <tds:User>
-        <tt:Username xmlns:tt="http://www.onvif.org/ver10/schema">${newUser}</tt:Username>
-        <tt:Password xmlns:tt="http://www.onvif.org/ver10/schema">${newPass}</tt:Password>
+        <tt:Username xmlns:tt="http://www.onvif.org/ver10/schema">${xmlEscape(newUser)}</tt:Username>
+        <tt:Password xmlns:tt="http://www.onvif.org/ver10/schema">${xmlEscape(newPass)}</tt:Password>
         <tt:UserLevel xmlns:tt="http://www.onvif.org/ver10/schema">${newLevel}</tt:UserLevel>
       </tds:User>
     </tds:CreateUsers>`;
@@ -1475,12 +1488,41 @@ const ACTIONS = {
     return sendSoap('SetNTP', body, null, 'DEVICE');
   },
 
-  reset_password() {
+  // SetUser requires <tt:UserLevel> (ONVIF schema: mandatory). Many cameras (e.g. CamHi)
+  // reject SetUser without it ("Invalid soap message"). Level: --new_userlevel if given,
+  // otherwise the user's CURRENT level is read via GetUsers (so a password change never
+  // changes the access level by accident).
+  async reset_password() {
     if (!username_reset || !newpass_reset) errorOut('Missing --username or --new_password');
+    let level = newLevel ? String(newLevel) : null;
+    if (level && !ONVIF_USER_LEVELS.includes(level)) {
+      errorOut(`--new_userlevel must be one of: ${ONVIF_USER_LEVELS.join(', ')}`);
+    }
+    if (!level) {
+      try {
+        await discoverServices();
+        const env = `<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">${wsseHeaderXml()}<s:Body><tds:GetUsers xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/></s:Body></s:Envelope>`;
+        const xml = await rawSoap(pickUrlForService('DEVICE'), nsForService('DEVICE') + '/GetUsers', env);
+        const users = xml.match(/<(?:\w+:)?User>[\s\S]*?<\/(?:\w+:)?User>/g) || [];
+        for (const u of users) {
+          const name = ((u.match(/<(?:\w+:)?Username>([^<]*)</) || [])[1] || '').trim();
+          if (name === String(username_reset)) level = ((u.match(/<(?:\w+:)?UserLevel>([^<]*)</) || [])[1] || '').trim();
+        }
+      } catch (err) {
+        console.error(`[ERROR ${activeIp}] GetUsers failed: ${err.message}`);
+        return;
+      }
+      if (!level) {
+        console.error(`[ERROR ${activeIp}] user "${username_reset}" not found (or no UserLevel) - pass --new_userlevel explicitly`);
+        return;
+      }
+      if (args.verbose) console.log(`[INFO ${activeIp}] keeping current UserLevel of "${username_reset}": ${level}`);
+    }
     const body = `<tds:SetUser xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
       <tds:User>
-        <tt:Username>${username_reset}</tt:Username>
-        <tt:Password>${newpass_reset}</tt:Password>
+        <tt:Username>${xmlEscape(username_reset)}</tt:Username>
+        <tt:Password>${xmlEscape(newpass_reset)}</tt:Password>
+        <tt:UserLevel>${level}</tt:UserLevel>
       </tds:User>
     </tds:SetUser>`;
     return sendSoap('SetUser', body, null, 'DEVICE');
